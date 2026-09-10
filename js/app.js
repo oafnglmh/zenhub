@@ -1693,13 +1693,21 @@ function logout() {
     </div>`);
 }
 
-// ==================== BOOT ====================
+window.App = App;
 
-document.addEventListener('DOMContentLoaded', () => {
+function bootApp() {
   if (!sessionStorage.getItem('thiencafe_auth')) {
     window.location.href = 'index.html';
     return;
   }
   App.init();
-  lucide.createIcons();
-});
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootApp);
+} else {
+  bootApp();
+}

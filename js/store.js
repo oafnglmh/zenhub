@@ -242,3 +242,5 @@ const Store = (() => {
     getElapsedSeconds, calcTableBill, calcFoodBill,
   };
 })();
+
+window.Store = Store;
