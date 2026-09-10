@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập — Thien Cafe · Billiards</title>
+  <meta name="description" content="Hệ thống quản lý tính tiền Thien Cafe Billiards">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --slate-dark:   #0f172a;
+      --slate-mid:    #1e293b;
+      --slate-light:  #334155;
+      --slate-accent: #475569;
+      --gradient: linear-gradient(135deg, #334155 0%, #0f172a 100%);
+      --gradient-hover: linear-gradient(135deg, #475569 0%, #1e293b 100%);
+    }
+
+    body {
+      font-family: 'Nunito', sans-serif;
+      background: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── Animated blobs (Slate Gray Tones) ── */
+    .blobs {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.3;
+      animation: blobFloat linear infinite;
+    }
+
+    .blob-1 {
+      width: 550px; height: 550px;
+      background: #334155;
+      top: -180px; left: -120px;
+      animation-duration: 18s;
+      animation-delay: 0s;
+    }
+    .blob-2 {
+      width: 450px; height: 450px;
+      background: #1e293b;
+      bottom: -140px; right: -100px;
+      animation-duration: 22s;
+      animation-delay: -8s;
+    }
+    .blob-3 {
+      width: 350px; height: 350px;
+      background: #475569;
+      top: 40%; left: 50%;
+      animation-duration: 15s;
+      animation-delay: -4s;
+      opacity: 0.15;
+    }
+
+    @keyframes blobFloat {
+      0%   { transform: translate(0, 0) scale(1); }
+      33%  { transform: translate(30px, -40px) scale(1.05); }
+      66%  { transform: translate(-20px, 20px) scale(0.97); }
+      100% { transform: translate(0, 0) scale(1); }
+    }
+
+    /* Floating billiard balls */
+    .balls-container {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ball {
+      position: absolute;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      opacity: 0.15;
+      animation: ballFloat linear infinite;
+    }
+
+    @keyframes ballFloat {
+      0%   { transform: translateY(0px) rotate(0deg); opacity: 0.1; }
+      50%  { opacity: 0.22; }
+      100% { transform: translateY(-60px) rotate(360deg); opacity: 0.1; }
+    }
+
+    /* ── Login Card (Slate Glassmorphism) ── */
+    .login-wrapper {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 420px;
+      padding: 16px;
+    }
+
+    .login-card {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      padding: 40px 36px;
+      backdrop-filter: blur(24px);
+      box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.65),
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    /* Logo */
+    .login-logo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, #475569 0%, #0f172a 100%);
+      border-radius: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 50%;
+      background: rgba(255,255,255,0.12);
+      border-radius: 22px 22px 0 0;
+    }
+
+    .logo-icon svg {
+      width: 36px;
+      height: 36px;
+      color: #f8fafc;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-title {
+      font-size: 22px;
+      font-weight: 900;
+      color: #f8fafc;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-sub {
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-top: 3px;
+    }
+
+    /* Form */
+    .form-group  { margin-bottom: 18px; }
+    .form-label  {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .form-label svg { width: 13px; height: 13px; }
+
+    .input-wrap { position: relative; }
+
+    .form-input {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      padding: 13px 16px;
+      color: #f8fafc;
+      font-family: 'Nunito', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      outline: none;
+      transition: all 0.25s ease;
+    }
+    .form-input:focus {
+      border-color: #64748b;
+      background: rgba(30, 41, 59, 0.9);
+      box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.25);
+    }
+    .form-input::placeholder { color: #64748b; }
+
+    /* Toggle password */
+    .pw-toggle {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      transition: color 0.2s;
+    }
+    .pw-toggle:hover { color: #f8fafc; }
+    .pw-toggle svg   { width: 18px; height: 18px; }
+
+    /* Error message */
+    .error-msg {
+      background: rgba(220, 38, 38, 0.15);
+      border: 1px solid rgba(220, 38, 38, 0.35);
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fca5a5;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .error-msg.show { display: flex; animation: shake 0.4s ease; }
+    .error-msg svg  { width: 16px; height: 16px; flex-shrink: 0; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%      { transform: translateX(-6px); }
+      40%      { transform: translateX(6px); }
+      60%      { transform: translateX(-4px); }
+      80%      { transform: translateX(4px); }
+    }
+
+    /* Submit button */
+    .btn-login {
+      width: 100%;
+      padding: 15px;
+      background: var(--gradient);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      border-radius: 14px;
+      font-family: 'Nunito', sans-serif;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 24px rgba(15, 23, 42, 0.5);
+      margin-top: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-login::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.12), transparent);
+      border-radius: inherit;
+    }
+    .btn-login:hover {
+      transform: translateY(-2px);
+      background: var(--gradient-hover);
+      box-shadow: 0 10px 32px rgba(15, 23, 42, 0.7);
+    }
+    .btn-login:active { transform: translateY(0); }
+    .btn-login svg { width: 18px; height: 18px; }
+
+    /* Demo chip */
+    .demo-chip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 22px;
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px dashed rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+    }
+    .demo-chip svg   { width: 14px; height: 14px; color: #94a3b8; flex-shrink: 0; }
+    .demo-chip span  { font-size: 12px; font-weight: 700; color: #cbd5e1; }
+    .demo-chip code  { background: rgba(255, 255, 255, 0.12); padding: 2px 7px; border-radius: 5px; font-family: monospace; font-size: 12px; color: #ffffff; }
+
+    /* Footer */
+    .login-footer {
+      text-align: center;
+      margin-top: 28px;
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background blobs -->
+  <div class="blobs">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- Floating ball decorations -->
+  <div class="balls-container">
+    <div class="ball" style="left:8%;top:15%;animation-duration:7s;animation-delay:0s;font-size:32px">🎱</div>
+    <div class="ball" style="left:88%;top:22%;animation-duration:9s;animation-delay:-3s;font-size:24px">🎱</div>
+    <div class="ball" style="left:15%;top:75%;animation-duration:11s;animation-delay:-5s;font-size:20px">🎱</div>
+    <div class="ball" style="left:80%;top:70%;animation-duration:8s;animation-delay:-2s;font-size:28px">🎱</div>
+    <div class="ball" style="left:50%;top:5%;animation-duration:12s;animation-delay:-6s;font-size:18px">🎱</div>
+  </div>
+
+  <!-- Login Form -->
+  <div class="login-wrapper">
+    <div class="login-card">
+
+      <div class="login-logo">
+        <div class="logo-icon">
+          <i data-lucide="target"></i>
+        </div>
+        <div class="logo-title">Thien Cafe · Billiards</div>
+        <div class="logo-sub">Hệ thống quản lý quán bida</div>
+      </div>
+
+      <div class="error-msg" id="error-msg">
+        <i data-lucide="x-circle"></i>
+        <span id="error-text">Tên đăng nhập hoặc mật khẩu không đúng!</span>
+      </div>
+
+      <form id="login-form" onsubmit="doLogin(event)" novalidate>
+
+        <div class="form-group">
+          <label class="form-label" for="username">
+            <i data-lucide="user"></i> Tên đăng nhập
+          </label>
+          <input
+            type="text"
+            id="username"
+            class="form-input"
+            placeholder="admin"
+            autocomplete="username"
+            value="admin"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">
+            <i data-lucide="lock"></i> Mật khẩu
+          </label>
+          <div class="input-wrap">
+            <input
+              type="password"
+              id="password"
+              class="form-input"
+              placeholder="••••••"
+              autocomplete="current-password"
+              style="padding-right:46px"
+              required
+            >
+            <button type="button" class="pw-toggle" onclick="togglePw()" id="pw-toggle-btn">
+              <i data-lucide="eye" id="pw-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-login" id="login-btn">
+          <i data-lucide="log-in"></i>
+          Đăng nhập
+        </button>
+
+      </form>
+
+      <div class="demo-chip">
+        <i data-lucide="info"></i>
+        <span>Demo tài khoản:</span>
+        <code>admin</code>
+        <span>/</span>
+        <code>1234</code>
+      </div>
+
+    </div>
+    <div class="login-footer">© 2025 Thien Cafe · Billiards Management System</div>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons();
+
+    // Check if already logged in
+    if (sessionStorage.getItem('thiencafe_auth')) {
+      window.location.href = 'app.html';
+    }
+
+    function togglePw() {
+      const input = document.getElementById('password');
+      const icon  = document.getElementById('pw-icon');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.setAttribute('data-lucide', 'eye-off');
+      } else {
+        input.type = 'password';
+        icon.setAttribute('data-lucide', 'eye');
+      }
+      lucide.createIcons({ nodes: [document.getElementById('pw-toggle-btn')] });
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      document.getElementById('error-text').textContent = msg;
+      el.classList.remove('show');
+      void el.offsetWidth; // reflow to restart animation
+      el.classList.add('show');
+    }
+
+    function doLogin(e) {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const stored   = localStorage.getItem('thiencafe_password') || '1234';
+
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Đang đăng nhập…`;
+      lucide.createIcons({ nodes: [btn] });
+
+      setTimeout(() => {
+        if (username === 'admin' && password === stored) {
+          sessionStorage.setItem('thiencafe_auth', 'true');
+          btn.innerHTML = `<i data-lucide="check-circle"></i> Thành công!`;
+          lucide.createIcons({ nodes: [btn] });
+          btn.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+          setTimeout(() => { window.location.href = 'app.html'; }, 500);
+        } else {
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="log-in"></i> Đăng nhập`;
+          lucide.createIcons({ nodes: [btn] });
+          if (username !== 'admin') {
+            showError('Tên đăng nhập không đúng! Hãy dùng "admin".');
+          } else {
+            showError('Mật khẩu không chính xác. Vui lòng thử lại!');
+          }
+          document.getElementById('password').focus();
+          document.getElementById('password').select();
+        }
+      }, 600);
+    }
+  </script>
+
+  <style>
+    .spin {
+      animation: spinAnim 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spinAnim {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+  </style>
+</body>
+</html>

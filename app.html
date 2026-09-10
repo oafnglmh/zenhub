@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thien Cafe · Billiards — Quản lý</title>
+  <meta name="description" content="Hệ thống quản lý tính tiền bàn bida Thien Cafe">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/print.css">
+</head>
+
+<body>
+
+  <div class="app-layout">
+
+    <!-- ===================== SIDEBAR ===================== -->
+    <aside class="sidebar">
+
+      <div class="sidebar-header">
+        <div class="brand">
+          <img src="assets/logo.png" alt="Thien Cafe logo" class="brand-logo-img">
+          <div>
+            <div class="brand-name">Thien Cafe</div>
+            <div class="brand-sub">Billiards Management</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item" data-page="dashboard" id="nav-dashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Tổng quan</span>
+        </a>
+        <a href="#" class="nav-item" data-page="tables" id="nav-tables">
+          <i data-lucide="grid-2x2"></i>
+          <span>Bàn bida</span>
+          <span class="nav-badge" id="active-tables-badge" style="display:none"></span>
+        </a>
+        <a href="#" class="nav-item" data-page="cafebill" id="nav-cafebill">
+          <i data-lucide="coffee"></i>
+          <span>Bill Cafe</span>
+        </a>
+        <a href="#" class="nav-item" data-page="revenue" id="nav-revenue">
+          <i data-lucide="bar-chart-3"></i>
+          <span>Doanh thu</span>
+        </a>
+        <a href="#" class="nav-item" data-page="menu" id="nav-menu">
+          <i data-lucide="utensils"></i>
+          <span>Thực đơn</span>
+        </a>
+        <a href="#" class="nav-item" data-page="settings" id="nav-settings">
+          <i data-lucide="settings"></i>
+          <span>Cài đặt</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar">A</div>
+          <div>
+            <div class="user-name">Admin</div>
+            <div class="user-role">Quản lý</div>
+          </div>
+        </div>
+        <button class="btn-logout" onclick="logout()" title="Đăng xuất">
+          <i data-lucide="log-out"></i>
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- ===================== MAIN CONTENT ===================== -->
+    <main class="main-content">
+
+      <!-- ============ PAGE: DASHBOARD ============ -->
+      <div id="page-dashboard" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="layout-dashboard"></i></div>
+            <h1>Tổng quan</h1>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary btn-sm" onclick="App.navigate('tables')">
+              <i data-lucide="grid-2x2"></i> Bàn bida
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="App.navigate('cafebill')">
+              <i data-lucide="coffee"></i> Bill Cafe
+            </button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon green"><i data-lucide="trending-up"></i></div>
+            <div>
+              <div class="stat-value" id="stat-today">0đ</div>
+              <div class="stat-label">Doanh thu hôm nay</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon blue"><i data-lucide="calendar"></i></div>
+            <div>
+              <div class="stat-value" id="stat-month">0đ</div>
+              <div class="stat-label">Doanh thu tháng này</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon teal"><i data-lucide="circle-dot"></i></div>
+            <div>
+              <div class="stat-value" id="stat-active">0/4</div>
+              <div class="stat-label">Bàn đang hoạt động</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon orange"><i data-lucide="receipt"></i></div>
+            <div>
+              <div class="stat-value" id="stat-invoices">0</div>
+              <div class="stat-label">Hóa đơn hôm nay</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="chart-card">
+            <div class="chart-header">
+              <div class="chart-title">Doanh thu 7 ngày gần nhất</div>
+              <button class="btn btn-ghost btn-sm" onclick="App.navigate('revenue')">
+                <i data-lucide="arrow-right"></i> Xem thêm
+              </button>
+            </div>
+            <div style="height:280px">
+              <canvas id="revenue-chart-dash"></canvas>
+            </div>
+          </div>
+
+          <div class="active-tables-card">
+            <div class="section-header">
+              <div class="section-title">Bàn đang chơi</div>
+              <button class="btn btn-primary btn-icon btn-sm" onclick="App.navigate('tables')">
+                <i data-lucide="arrow-right"></i>
+              </button>
+            </div>
+            <div id="active-tables-list"></div>
+          </div>
+        </div>
+
+      </div><!-- /page-dashboard -->
+
+
+      <!-- ============ PAGE: TABLES ============ -->
+      <div id="page-tables" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="grid-2x2"></i></div>
+            <h1>Quản lý bàn bida</h1>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" id="add-table-btn" onclick="App.addTableModal()">
+              <i data-lucide="plus"></i> Thêm bàn
+            </button>
+          </div>
+        </div>
+
+        <div class="tables-toolbar">
+          <div class="tables-legend">
+            <div class="legend-item">
+              <div class="legend-dot idle"></div> Trống
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot active"></div> Đang chơi
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot paused"></div> Tạm dừng
+            </div>
+          </div>
+        </div>
+
+        <div class="tables-grid" id="tables-grid"></div>
+
+      </div><!-- /page-tables -->
+
+
+      <!-- ============ PAGE: CAFE BILL ============ -->
+      <div id="page-cafebill" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="coffee"></i></div>
+            <h1>Bill Cafe — Gọi món nhanh</h1>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" onclick="App._cafeCart=[];App._renderCafeCart();">
+              <i data-lucide="trash-2"></i> Xóa giỏ
+            </button>
+            <button class="btn btn-primary btn-lg" id="cafe-pay-btn" onclick="App.cafeBillCheckout()" disabled>
+              <i data-lucide="credit-card"></i> Thanh toán
+            </button>
+          </div>
+        </div>
+
+        <div class="cafe-bill-layout">
+
+          <!-- Menu panel -->
+          <div class="cafe-menu-panel">
+            <img src="assets/cafe_hero.jpg" alt="Thien Cafe" class="cafe-hero-img" onerror="this.style.display='none'">
+            <div id="cafe-cat-filters" class="food-category-tabs" style="margin-bottom:12px"></div>
+            <div class="cafe-menu-grid" id="cafe-menu-grid"></div>
+          </div>
+
+          <!-- Cart panel -->
+          <div class="cafe-cart-panel">
+            <div class="cafe-cart-title">
+              <span><i data-lucide="shopping-cart"
+                  style="width:16px;height:16px;display:inline;vertical-align:middle"></i> Giỏ hàng</span>
+              <span id="cafe-cart-count" style="font-size:12px;color:var(--text-muted);font-weight:500"></span>
+            </div>
+            <div class="cafe-cart-items" id="cafe-cart-list">
+              <div class="order-empty">
+                <i data-lucide="shopping-cart" style="width:40px;height:40px;opacity:0.2"></i>
+                <p>Chưa có món nào<br><small>Bấm vào món bên trái để thêm</small></p>
+              </div>
+            </div>
+            <div class="cafe-cart-footer">
+              <div class="cafe-cart-subtotal">
+                <span>Tổng cộng</span>
+                <span id="cafe-cart-total" style="color:var(--blue-dark)">0đ</span>
+              </div>
+              <button class="btn btn-primary" style="width:100%" onclick="App.cafeBillCheckout()" id="cafe-pay-btn2"
+                disabled>
+                <i data-lucide="credit-card"></i> Thanh toán & In bill
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div><!-- /page-cafebill -->
+
+
+      <!-- ============ PAGE: REVENUE ============ -->
+      <div id="page-revenue" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="bar-chart-3"></i></div>
+            <h1>Báo cáo doanh thu</h1>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" onclick="window.print()">
+              <i data-lucide="printer"></i> In báo cáo
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="revenue-filters" id="revenue-filters">
+          <button class="filter-btn" data-filter="day" onclick="App.setRevenueFilter('day')">Hôm nay</button>
+          <button class="filter-btn" data-filter="week" onclick="App.setRevenueFilter('week')">7 ngày qua</button>
+          <button class="filter-btn active" data-filter="month" onclick="App.setRevenueFilter('month')">Tháng
+            này</button>
+          <button class="filter-btn" data-filter="custom" onclick="App.setRevenueFilter('custom')">Tùy chỉnh</button>
+
+          <!-- Date range picker, hidden unless custom selected -->
+          <div class="date-range-wrap" id="date-range-wrap">
+            <span class="date-range-sep" style="font-size:12px;color:var(--text-secondary);padding-left:4px">Từ</span>
+            <input type="date" id="date-from" class="form-control" style="width:140px">
+            <span class="date-range-sep">đến</span>
+            <input type="date" id="date-to" class="form-control" style="width:140px">
+            <button class="btn btn-primary btn-sm" onclick="App.renderRevenue()">
+              <i data-lucide="search"></i> Lọc
+            </button>
+          </div>
+        </div>
+
+        <!-- Revenue Stats -->
+        <div class="stats-grid" style="grid-template-columns:repeat(5,1fr)">
+          <div class="stat-card">
+            <div class="stat-icon blue"><i data-lucide="trending-up"></i></div>
+            <div>
+              <div class="stat-value" id="rev-total">0đ</div>
+              <div class="stat-label">Tổng doanh thu</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green"><i data-lucide="receipt"></i></div>
+            <div>
+              <div class="stat-value" id="rev-count">0</div>
+              <div class="stat-label">Số hóa đơn</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon orange"><i data-lucide="calculator"></i></div>
+            <div>
+              <div class="stat-value" id="rev-avg">0đ</div>
+              <div class="stat-label">Trung bình/HĐ</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon teal"><i data-lucide="circle-dot"></i></div>
+            <div>
+              <div class="stat-value" id="rev-table">0đ</div>
+              <div class="stat-label">Tiền bàn bida</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green"><i data-lucide="coffee"></i></div>
+            <div>
+              <div class="stat-value" id="rev-food">0đ</div>
+              <div class="stat-label">Đồ ăn & uống</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-card" style="margin-bottom:24px">
+          <div class="chart-header">
+            <div class="chart-title">Biểu đồ doanh thu chi tiết</div>
+          </div>
+          <div style="height:280px">
+            <canvas id="revenue-chart-main"></canvas>
+          </div>
+        </div>
+
+        <!-- Invoice table -->
+        <div class="section-header">
+          <div class="section-title">Lịch sử hóa đơn</div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Mã HĐ</th>
+                <th>Loại / Bàn</th>
+                <th>Thời gian</th>
+                <th>Thời gian chơi</th>
+                <th>Tổng tiền</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="invoice-tbody">
+              <tr>
+                <td colspan="6" class="td-empty">Chưa có hóa đơn nào</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /page-revenue -->
+
+
+      <!-- ============ PAGE: MENU ============ -->
+      <div id="page-menu" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="utensils"></i></div>
+            <h1>Quản lý thực đơn</h1>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" onclick="App.addMenuItemModal()">
+              <i data-lucide="plus"></i> Thêm món
+            </button>
+          </div>
+        </div>
+
+        <div id="menu-cat-filters" class="food-category-tabs" style="margin-bottom:20px"></div>
+        <div class="menu-grid" id="menu-grid"></div>
+
+      </div><!-- /page-menu -->
+
+
+      <!-- ============ PAGE: SETTINGS ============ -->
+      <div id="page-settings" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="settings"></i></div>
+            <h1>Cài đặt hệ thống</h1>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+
+          <div class="settings-card">
+            <div class="settings-card-title">
+              <i data-lucide="store"></i> Thông tin quán
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tên quán</label>
+              <input type="text" id="s-name" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Địa chỉ</label>
+              <input type="text" id="s-address" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Số điện thoại</label>
+              <input type="text" id="s-phone" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Lời nhắn cuối hóa đơn</label>
+              <input type="text" id="s-footer" class="form-control">
+            </div>
+            <button class="btn btn-primary" onclick="App.saveSettings()">
+              <i data-lucide="save"></i> Lưu thông tin
+            </button>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px">
+
+            <div class="settings-card">
+              <div class="settings-card-title">
+                <i data-lucide="circle-dollar-sign"></i> Cài đặt giá
+              </div>
+              <div class="form-group">
+                <label class="form-label">Giá mặc định / giờ (VNĐ)</label>
+                <input type="number" id="s-price" class="form-control" min="0" step="5000">
+                <div class="form-hint">Áp dụng cho bàn mới và khi mở bàn không chỉnh giá</div>
+              </div>
+              <button class="btn btn-primary" onclick="App.saveSettings()">
+                <i data-lucide="save"></i> Lưu
+              </button>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">
+                <i data-lucide="lock"></i> Bảo mật
+              </div>
+              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px">
+                Tài khoản: <strong>admin</strong>
+              </p>
+              <button class="btn btn-secondary" onclick="App.changePassword()">
+                <i data-lucide="key"></i> Đổi mật khẩu
+              </button>
+            </div>
+
+            <div class="settings-card" style="border-color:var(--danger-border)">
+              <div class="settings-card-title" style="color:var(--danger)">
+                <i data-lucide="alert-triangle"></i> Vùng nguy hiểm
+              </div>
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+                Xóa toàn bộ dữ liệu lịch sử và cài đặt. Không thể hoàn tác!
+              </p>
+              <button class="btn btn-danger" onclick="App.resetAllData()">
+                <i data-lucide="trash-2"></i> Xóa toàn bộ dữ liệu
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /page-settings -->
+
+    </main>
+  </div>
+
+  <!-- ===================== OVERLAY & TOAST ===================== -->
+  <div id="modal-overlay" class="modal-overlay hidden"></div>
+  <div id="toast-container"></div>
+  <div id="print-area"></div>
+
+  <!-- ===================== SCRIPTS ===================== -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+
+  <script>
+    // Sync both pay buttons in cafe bill page
+    const _origRenderCafeCart = App._renderCafeCart.bind(App);
+    App._renderCafeCart = function () {
+      _origRenderCafeCart();
+      const payBtn2 = document.getElementById('cafe-pay-btn2');
+      if (payBtn2) payBtn2.disabled = App._cafeCart.length === 0;
+    };
+  </script>
+
+</body>
+
+</html>
