@@ -16,6 +16,22 @@
 
 <body>
 
+  <!-- Mobile Top Header -->
+  <header class="mobile-header">
+    <button class="mobile-menu-btn" onclick="App.toggleMobileSidebar()" id="mobile-menu-btn" title="Menu">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-brand">
+      <img src="assets/logo.png" alt="Logo" class="mobile-brand-logo">
+      <span>Thien Cafe</span>
+    </div>
+    <button class="mobile-logout-btn" onclick="logout()" title="Đăng xuất">
+      <i data-lucide="log-out"></i>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="App.closeMobileSidebar()"></div>
+
   <div class="app-layout">
 
     <!-- ===================== SIDEBAR ===================== -->

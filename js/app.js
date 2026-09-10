@@ -114,8 +114,23 @@ const App = {
     });
   },
 
+  toggleMobileSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.toggle('open');
+    if (overlay) overlay.classList.toggle('open');
+  },
+
+  closeMobileSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+  },
+
   navigate(page) {
     this.currentPage = page;
+    this.closeMobileSidebar();
 
     document.querySelectorAll('.nav-item[data-page]').forEach(el =>
       el.classList.toggle('active', el.dataset.page === page));
@@ -128,7 +143,7 @@ const App = {
       tables:     () => this.renderTables(),
       revenue:    () => this.renderRevenue(),
       menu:       () => this.renderMenuPage(),
-      cafebill:   () => this.renderCafeBill(),
+      cafebill:   () => this.renderCafeBillPage(),
       settings:   () => this.renderSettings(),
     };
     if (renderers[page]) renderers[page]();
