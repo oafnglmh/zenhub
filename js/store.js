@@ -42,6 +42,8 @@ const Store = (() => {
     { id: 'table_4', name: 'Bàn 4', type: 'standard', pricePerHour: 50000 },
   ];
 
+  const DEFAULT_MEMBERS = [];
+
   const DEFAULT_SETTINGS = {
     shopName: 'Thien Cafe - Billiards',
     shopAddress: 'Ngọc Sơn, Hành Thiện, Quảng Ngãi',
@@ -49,6 +51,14 @@ const Store = (() => {
     defaultPricePerHour: 50000,
     footerNote: 'Cảm ơn quý khách! Hẹn gặp lại! 🎱',
   };
+
+  // Hạng thành viên mặc định — admin có thể chỉnh % giảm trong Cài đặt
+  const DEFAULT_RANK_SETTINGS = [
+    { id: 'dong',    label: 'Đồng',      icon: 'medal',  minPoints: 0,   discount: 0  },
+    { id: 'bac',     label: 'Bạc',       icon: 'award',  minPoints: 50,  discount: 3  },
+    { id: 'vang',    label: 'Vàng',      icon: 'trophy', minPoints: 200, discount: 5  },
+    { id: 'diamond', label: 'Kim cương', icon: 'gem',    minPoints: 500, discount: 10 },
+  ];
 
   // ==================== PRIVATE HELPERS ====================
 
@@ -68,8 +78,14 @@ const Store = (() => {
       _set('settings', DEFAULT_SETTINGS);
       _set('sessions', {});
       _set('invoices', []);
+      _set('members', DEFAULT_MEMBERS);
+      _set('rankSettings', DEFAULT_RANK_SETTINGS);
       _set('initialized', true);
     }
+    // Migrate: ensure members key exists for older localStorage
+    if (_get('members')      === null) _set('members',      DEFAULT_MEMBERS);
+    // Migrate: ensure rankSettings key exists for older localStorage
+    if (_get('rankSettings') === null) _set('rankSettings', DEFAULT_RANK_SETTINGS);
   };
 
   // ==================== TABLES ====================
@@ -190,6 +206,55 @@ const Store = (() => {
   const updateMenuItem = (id, data) => _setMenu(getMenu().map(m => m.id === id ? { ...m, ...data } : m));
   const deleteMenuItem = (id) => _setMenu(getMenu().filter(m => m.id !== id));
 
+  // ==================== MEMBERS ====================
+
+  const getMembers = () => _get('members') || [];
+  const _setMembers = (m) => _set('members', m);
+  const getMember = (id) => getMembers().find(m => m.id === id) || null;
+
+  const addMember = (data) => {
+    const members = getMembers();
+    const member = {
+      ...data,
+      id: `mem_${Date.now()}`,
+      points: 0,
+      totalSpent: 0,
+      visitCount: 0,
+      createdAt: Date.now(),
+    };
+    members.push(member);
+    _setMembers(members);
+    return member;
+  };
+
+  const updateMember = (id, data) =>
+    _setMembers(getMembers().map(m => m.id === id ? { ...m, ...data } : m));
+
+  const deleteMember = (id) =>
+    _setMembers(getMembers().filter(m => m.id !== id));
+
+  /**
+   * Adds points, increments visitCount, and adds to totalSpent.
+   * @param {string} id - member id
+   * @param {number} pointsToAdd
+   * @param {number} amountSpent
+   */
+  const addMemberPoints = (id, pointsToAdd, amountSpent = 0) => {
+    const members = getMembers();
+    const idx = members.findIndex(m => m.id === id);
+    if (idx === -1) return;
+    members[idx].points      = (members[idx].points      || 0) + pointsToAdd;
+    members[idx].totalSpent  = (members[idx].totalSpent  || 0) + amountSpent;
+    members[idx].visitCount  = (members[idx].visitCount  || 0) + 1;
+    members[idx].lastVisit   = Date.now();
+    _setMembers(members);
+  };
+
+  // ==================== RANK SETTINGS ====================
+
+  const getRankSettings = () => _get('rankSettings') || DEFAULT_RANK_SETTINGS;
+  const setRankSettings = (data) => _set('rankSettings', data);
+
   // ==================== SETTINGS ====================
 
   const getSettings = () => ({ ...DEFAULT_SETTINGS, ...(_get('settings') || {}) });
@@ -238,7 +303,9 @@ const Store = (() => {
     addItemToSession, updateSessionItem,
     getInvoices, addInvoice, deleteInvoice,
     getMenu, addMenuItem, updateMenuItem, deleteMenuItem,
+    getMembers, getMember, addMember, updateMember, deleteMember, addMemberPoints,
     getSettings, setSettings,
+    getRankSettings, setRankSettings,
     getElapsedSeconds, calcTableBill, calcFoodBill,
   };
 })();

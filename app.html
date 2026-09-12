@@ -69,6 +69,11 @@
           <i data-lucide="utensils"></i>
           <span>Thực đơn</span>
         </a>
+        <a href="#" class="nav-item" data-page="members" id="nav-members">
+          <i data-lucide="users"></i>
+          <span>Thành viên</span>
+          <span class="nav-badge" id="members-nav-badge" style="display:none"></span>
+        </a>
         <a href="#" class="nav-item" data-page="settings" id="nav-settings">
           <i data-lucide="settings"></i>
           <span>Cài đặt</span>
@@ -392,6 +397,42 @@
       </div><!-- /page-menu -->
 
 
+      <!-- ============ PAGE: MEMBERS ============ -->
+      <div id="page-members" class="page">
+
+        <div class="page-header">
+          <div class="page-title">
+            <div class="page-title-icon"><i data-lucide="users"></i></div>
+            <h1>Thành viên</h1>
+            <span id="members-count" style="font-size:13px;color:var(--text-muted);font-weight:500;margin-left:4px"></span>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" id="add-member-btn" onclick="App.addMemberModal()">
+              <i data-lucide="user-plus"></i> Thêm thành viên
+            </button>
+          </div>
+        </div>
+
+        <!-- Rank legend — rendered dynamically by JS -->
+        <div class="member-rank-legend" id="member-rank-legend"></div>
+
+        <!-- Search bar -->
+        <div class="member-search-wrap">
+          <i data-lucide="search" style="width:16px;height:16px;color:var(--text-muted)"></i>
+          <input
+            type="text"
+            id="member-search-input"
+            class="member-search-input"
+            placeholder="Tìm theo tên hoặc số điện thoại…"
+            oninput="App.searchMembers(this.value)"
+          >
+        </div>
+
+        <div class="members-grid" id="members-grid"></div>
+
+      </div><!-- /page-members -->
+
+
       <!-- ============ PAGE: SETTINGS ============ -->
       <div id="page-settings" class="page">
 
@@ -454,6 +495,20 @@
               </p>
               <button class="btn btn-secondary" onclick="App.changePassword()">
                 <i data-lucide="key"></i> Đổi mật khẩu
+              </button>
+            </div>
+
+            <!-- Rank settings card -->
+            <div class="settings-card">
+              <div class="settings-card-title">
+                <i data-lucide="gem"></i> Hạng thành viên
+              </div>
+              <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+                Thiết lập ngưỡng điểm và % giảm giá cho từng hạng.
+              </p>
+              <div id="rank-settings-list"></div>
+              <button class="btn btn-primary" onclick="App.saveRankSettings()">
+                <i data-lucide="save"></i> Lưu hạng
               </button>
             </div>
 

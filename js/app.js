@@ -22,7 +22,7 @@ const formatDateTime = (ts) =>
 const formatDateShort = (ts) =>
   new Date(ts).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 
-const formatDuration = (secs) => {
+const _formatDuration = (secs) => {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
@@ -100,9 +100,27 @@ const App = {
     Store.init();
     Modal.init();
     this._setupNav();
+    this.updateNavBadges();
     this.navigate('dashboard');
     this._startTimers();
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') Modal.close(); });
+  },
+
+  updateNavBadges() {
+    const sessions = Store.getSessions();
+    const activeTablesBadge = document.getElementById('active-tables-badge');
+    const activeCount = Object.keys(sessions).length;
+    if (activeTablesBadge) {
+      activeTablesBadge.textContent = activeCount > 0 ? activeCount : '';
+      activeTablesBadge.style.display = activeCount > 0 ? '' : 'none';
+    }
+
+    const members = Store.getMembers();
+    const membersBadge = document.getElementById('members-nav-badge');
+    if (membersBadge) {
+      membersBadge.textContent = members.length > 0 ? members.length : '';
+      membersBadge.style.display = members.length > 0 ? '' : 'none';
+    }
   },
 
   _setupNav() {
@@ -143,7 +161,8 @@ const App = {
       tables:     () => this.renderTables(),
       revenue:    () => this.renderRevenue(),
       menu:       () => this.renderMenuPage(),
-      cafebill:   () => this.renderCafeBillPage(),
+      cafebill:   () => this.renderCafeBill(),
+      members:    () => this.renderMembersPage(),
       settings:   () => this.renderSettings(),
     };
     if (renderers[page]) renderers[page]();
@@ -299,10 +318,11 @@ const App = {
         datasets: [{
           label: 'Doanh thu',
           data,
-          backgroundColor: data.map(v => v > 0 ? 'rgba(37,99,235,0.7)' : 'rgba(148,163,184,0.2)'),
-          borderColor: data.map(v => v > 0 ? '#2563eb' : '#cbd5e1'),
-          borderWidth: 2,
-          borderRadius: 8,
+          backgroundColor: data.map(v => v > 0 ? 'rgba(51, 65, 85, 0.85)' : 'rgba(148, 163, 184, 0.25)'),
+          borderColor: data.map(v => v > 0 ? '#334155' : '#cbd5e1'),
+          hoverBackgroundColor: data.map(v => v > 0 ? '#0f172a' : '#94a3b8'),
+          borderWidth: 1.5,
+          borderRadius: 6,
           borderSkipped: false,
         }]
       },
@@ -311,15 +331,22 @@ const App = {
         maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => formatMoney(ctx.raw) } },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            titleFont: { family: 'Inter', size: 12, weight: '700' },
+            bodyFont: { family: 'Inter', size: 13, weight: '600' },
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: { label: (ctx) => ` Doanh thu: ${formatMoney(ctx.raw)}` }
+          },
         },
         scales: {
           x: {
-            grid: { color: 'rgba(0,0,0,0.05)' },
+            grid: { display: false },
             ticks: { color: '#64748b', font: { family: 'Inter', weight: '600', size: 11 }, maxRotation: 45 },
           },
           y: {
-            grid: { color: 'rgba(0,0,0,0.05)' },
+            grid: { color: 'rgba(203, 213, 225, 0.4)', strokeDash: [4, 4] },
             ticks: {
               color: '#64748b',
               font: { family: 'Inter', weight: '600', size: 11 },
@@ -327,25 +354,18 @@ const App = {
             },
           },
         },
-      },
+      }
     };
   },
 
   // ────────────────────────────── TABLES ──────────────────────────────
 
   renderTables() {
+    this.updateNavBadges();
     const tables   = Store.getTables();
     const sessions = Store.getSessions();
     const grid     = document.getElementById('tables-grid');
     if (!grid) return;
-
-    // Update nav badge
-    const badge = document.getElementById('active-tables-badge');
-    const cnt   = Object.keys(sessions).length;
-    if (badge) {
-      badge.textContent = cnt > 0 ? cnt : '';
-      badge.style.display = cnt > 0 ? '' : 'none';
-    }
 
     if (tables.length === 0) {
       grid.innerHTML = `
@@ -851,6 +871,8 @@ const App = {
             </div>
           </div>` : ''}
 
+        ${this._memberSelectorHTML('discount-pct', total)}
+
         <div class="checkout-section">
           <div class="checkout-section-title">${ic('tag', 14)} Giảm giá (tuỳ chọn)</div>
           <div class="discount-row">
@@ -904,6 +926,7 @@ const App = {
     const subtotal    = tableBill + foodBill;
     const discount    = Math.round(subtotal * discountPct / 100);
     const total       = subtotal - discount;
+    const memberId    = document.getElementById('checkout-member-select')?.value || null;
 
     const invoice = Store.addInvoice({
       tableName:      table.name,
@@ -919,7 +942,15 @@ const App = {
       discount,
       subtotal,
       total,
+      memberId: memberId || null,
     });
+
+    // Award member points & update history
+    if (memberId) {
+      Store.addMemberPoints(memberId, 1, total);
+      const member = Store.getMember(memberId);
+      if (member) Toast.show(`+1 điểm cho ${member.name} 🎉`, 'info', 2500);
+    }
 
     Store.endSession(tableId);
     this.checkoutTableId = null;
@@ -1491,6 +1522,7 @@ const App = {
               <span class="value">${formatMoney(item.price * item.quantity)}</span>
             </div>`).join('')}
         </div>
+        ${this._memberSelectorHTML('cafe-discount-pct', subtotal)}
         <div class="checkout-section">
           <div class="checkout-section-title">${ic('tag', 13)} Giảm giá</div>
           <div class="discount-row">
@@ -1533,6 +1565,7 @@ const App = {
     const foodBill    = this._cafeCart.reduce((s, i) => s + i.price * i.quantity, 0);
     const discount    = Math.round(foodBill * discountPct / 100);
     const total       = foodBill - discount;
+    const memberId    = document.getElementById('checkout-member-select')?.value || null;
 
     const invoice = Store.addInvoice({
       tableName:      'Bill Cafe',
@@ -1549,7 +1582,15 @@ const App = {
       subtotal:       foodBill,
       total,
       type:           'cafe',
+      memberId:       memberId || null,
     });
+
+    // Award member points & update history
+    if (memberId) {
+      Store.addMemberPoints(memberId, 1, total);
+      const member = Store.getMember(memberId);
+      if (member) Toast.show(`+1 điểm cho ${member.name} ☕`, 'info', 2500);
+    }
 
     this._cafeCart = [];
     Modal.close();
@@ -1591,6 +1632,371 @@ const App = {
     window.print();
   },
 
+  // ────────────────────────────── MEMBERS ──────────────────────────────
+
+  /** Fixed colour palette per rank id */
+  _RANK_PALETTE: {
+    dong:    { color: '#b45309', bg: 'rgba(180,83,9,0.10)',    border: 'rgba(180,83,9,0.3)'    },
+    bac:     { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.4)' },
+    vang:    { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.4)'  },
+    diamond: { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.4)'   },
+  },
+
+  /**
+   * Returns rank info for a given points value.
+   * Discounts are loaded live from Store (admin-configurable).
+   * labelHtml contains the Lucide icon + label text ready for innerHTML.
+   */
+  _memberRank(points) {
+    // Sort descending so we match the highest applicable rank first
+    const ranks = Store.getRankSettings().slice().sort((a, b) => b.minPoints - a.minPoints);
+    for (const rank of ranks) {
+      if (points >= rank.minPoints) {
+        const pal = this._RANK_PALETTE[rank.id] || this._RANK_PALETTE.dong;
+        return {
+          ...rank,
+          ...pal,
+          labelHtml: `${ic(rank.icon, 13)} ${rank.label}`,
+        };
+      }
+    }
+    // Fallback to the lowest rank
+    const first = ranks[ranks.length - 1];
+    const pal   = this._RANK_PALETTE[first?.id] || this._RANK_PALETTE.dong;
+    return { ...first, ...pal, labelHtml: `${ic(first.icon, 13)} ${first.label}` };
+  },
+
+  /** Renders the rank legend bar on the Members page */
+  _renderMemberRankLegend() {
+    const el = document.getElementById('member-rank-legend');
+    if (!el) return;
+    const ranks = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
+    el.innerHTML = ranks.map(rank => {
+      const pal = this._RANK_PALETTE[rank.id] || this._RANK_PALETTE.dong;
+      const rangeText = rank.minPoints === 0
+        ? ''
+        : ` (${rank.minPoints}điểm+)`;
+      const discText = rank.discount > 0 ? ` — giảm ${rank.discount}%` : ' — không giảm';
+      return `
+        <div class="rank-legend-item">
+          <span class="rank-dot" style="background:${pal.color}"></span>
+          <span style="display:inline-flex;align-items:center;gap:4px;color:${pal.color}">
+            ${ic(rank.icon, 13)}
+          </span>
+          <span>${rank.label}${rangeText}${discText}</span>
+        </div>`;
+    }).join('');
+    lucide.createIcons({ nodes: [el] });
+  },
+
+  /** Renders the member selector HTML block for checkout modals */
+  _memberSelectorHTML(discountInputId, subtotal) {
+    const members = Store.getMembers();
+    if (!members.length) return '';
+    const options = members.map(m => {
+      const rank = this._memberRank(m.points);
+      const discStr = rank.discount > 0 ? `−${rank.discount}%` : 'không giảm';
+      return `<option value="${m.id}">${m.name}${m.phone ? ' · ' + m.phone : ''} — ${rank.label} (${discStr})</option>`;
+    }).join('');
+    return `
+      <div class="member-selector-wrap">
+        <div class="member-selector-title">${ic('users', 12)} Áp dụng thành viên</div>
+        <div class="member-selector-row">
+          <select class="member-selector-select" id="checkout-member-select"
+            onchange="App._applyMemberDiscount('${discountInputId}', ${subtotal})">
+            <option value="">— Không áp dụng —</option>
+            ${options}
+          </select>
+        </div>
+        <div id="checkout-member-chip"></div>
+      </div>`;
+  },
+
+  /** Auto-fills discount % from member rank and shows an info chip */
+  _applyMemberDiscount(discountInputId, subtotal) {
+    const memberId    = document.getElementById('checkout-member-select')?.value;
+    const discountInput = document.getElementById(discountInputId);
+    const chipEl      = document.getElementById('checkout-member-chip');
+    if (!memberId) {
+      if (discountInput) discountInput.value = 0;
+      if (chipEl) chipEl.innerHTML = '';
+      if (discountInputId === 'cafe-discount-pct') {
+        this._updateCafeTotal(subtotal);
+      } else {
+        const totEl  = document.getElementById('checkout-total');
+        const discEl = document.getElementById('discount-amount');
+        if (discEl) discEl.textContent = '— 0đ';
+        if (totEl)  totEl.textContent  = formatMoney(subtotal);
+      }
+      return;
+    }
+    const member = Store.getMember(memberId);
+    if (!member) return;
+    const rank = this._memberRank(member.points);
+    if (discountInput) discountInput.value = rank.discount;
+    if (chipEl) {
+      const chipStyle = rank.discount > 0
+        ? `background:${rank.bg};border-color:${rank.border};color:${rank.color}`
+        : 'background:var(--bg-tertiary);border-color:var(--border);color:var(--text-muted)';
+      const discLabel = rank.discount > 0 ? `giảm ${rank.discount}%` : 'không giảm';
+      chipEl.innerHTML = `<span class="member-selected-chip" style="${chipStyle}">
+        ${ic('user-check', 12)} ${member.name} — ${rank.labelHtml} — ${discLabel}
+      </span>`;
+      lucide.createIcons({ nodes: [chipEl] });
+    }
+    // Recalculate total
+    if (discountInputId === 'cafe-discount-pct') {
+      this._updateCafeTotal(subtotal);
+    } else {
+      const discount = Math.round(subtotal * rank.discount / 100);
+      const total    = subtotal - discount;
+      const discEl   = document.getElementById('discount-amount');
+      const totEl    = document.getElementById('checkout-total');
+      if (discEl) discEl.textContent = `— ${formatMoney(discount)}`;
+      if (totEl)  totEl.textContent  = formatMoney(total);
+    }
+  },
+
+  renderMembersPage() {
+    this.updateNavBadges();
+    const members = Store.getMembers();
+    const grid    = document.getElementById('members-grid');
+    const counter = document.getElementById('members-count');
+    if (!grid) return;
+
+    // Render dynamic rank legend with Lucide icons
+    this._renderMemberRankLegend();
+
+    if (counter) counter.textContent = `${members.length} thành viên`;
+
+    if (members.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;padding:60px 0">
+          ${ic('users', 52)}
+          <p style="margin-top:14px">Chưa có thành viên nào.<br><small style="color:var(--text-muted)">Nhấn <strong>Thêm thành viên</strong> để bắt đầu!</small></p>
+        </div>`;
+      lucide.createIcons({ nodes: [grid] });
+      return;
+    }
+
+    grid.innerHTML = members.map(m => this._memberCardHTML(m)).join('');
+    lucide.createIcons({ nodes: [grid] });
+  },
+
+  _memberCardHTML(member) {
+    const rank     = this._memberRank(member.points);
+    const initials = (member.name || '?').split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
+    const lastVisit = member.lastVisit ? formatDateShort(member.lastVisit) : '—';
+
+    // Next rank progress (read from Store so it reflects admin-set thresholds)
+    const allRanks    = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
+    const nextRank    = allRanks.find(r => r.minPoints > member.points) || null;
+    const topDiscount = allRanks[allRanks.length - 1]?.discount ?? 0;
+    const nextRankInfo = nextRank ? {
+      labelHtml: `${ic(nextRank.icon, 12)} ${nextRank.label}`,
+      need: nextRank.minPoints,
+      pct:  Math.min(100, Math.round((member.points / nextRank.minPoints) * 100)),
+    } : null;
+
+    return `
+      <div class="member-card" id="mcard-${member.id}">
+        <div class="member-card-top">
+          <div class="member-avatar-wrap">
+            <div class="member-avatar">${initials}</div>
+            <div class="member-rank-badge" style="background:${rank.bg};border-color:${rank.border};color:${rank.color}">${rank.labelHtml}</div>
+          </div>
+          <div class="member-info">
+            <div class="member-name">${member.name}</div>
+            <div class="member-phone">${ic('phone',13)} ${member.phone || 'Chưa có SĐT'}</div>
+            ${member.note ? `<div class="member-note">${ic('message-circle',12)} ${member.note}</div>` : ''}
+          </div>
+          <div class="member-card-actions">
+            <button class="btn btn-ghost btn-icon btn-sm" onclick="App.editMemberModal('${member.id}')" title="Chỉnh sửa">${ic('pencil',14)}</button>
+            <button class="btn btn-danger btn-icon btn-sm" onclick="App.deleteMember('${member.id}')" title="Xóa">${ic('trash-2',14)}</button>
+          </div>
+        </div>
+
+        <div class="member-stats">
+          <div class="member-stat">
+            <div class="member-stat-value" style="color:${rank.color}">${member.points}</div>
+            <div class="member-stat-label">Điểm</div>
+          </div>
+          <div class="member-stat">
+            <div class="member-stat-value">${member.visitCount || 0}</div>
+            <div class="member-stat-label">Lần ghé</div>
+          </div>
+          <div class="member-stat">
+            <div class="member-stat-value">${formatMoney(member.totalSpent || 0)}</div>
+            <div class="member-stat-label">Tổng chi</div>
+          </div>
+          <div class="member-stat">
+            <div class="member-stat-value">${lastVisit}</div>
+            <div class="member-stat-label">Ghé gần nhất</div>
+          </div>
+        </div>
+
+        ${nextRankInfo ? `
+        <div class="member-progress-wrap">
+          <div class="member-progress-label">
+            <span>Tiến tới ${nextRankInfo.labelHtml}</span>
+            <span>${member.points}/${nextRankInfo.need} điểm</span>
+          </div>
+          <div class="member-progress-bar">
+            <div class="member-progress-fill" style="width:${nextRankInfo.pct}%;background:${rank.color}"></div>
+          </div>
+        </div>` : `
+        <div class="member-progress-wrap">
+          <div class="member-progress-label" style="justify-content:center;color:#06b6d4;font-weight:700">
+            ${ic('star',13)} Hạng cao nhất — Ưu đãi ${topDiscount}%!
+          </div>
+        </div>`}
+
+        ${rank.discount > 0 ? `
+        <div class="member-discount-tag" style="background:${rank.bg};border-color:${rank.border};color:${rank.color}">
+          ${ic('tag',13)} Được giảm ${rank.discount}% khi thanh toán
+        </div>` : ''}
+      </div>`;
+  },
+
+  addMemberModal() {
+    Modal.show(`
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">${ic('user-plus', 20)} Thêm thành viên mới</div>
+          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tên thành viên <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="mem-name" class="form-control" placeholder="Nguyễn Văn A" autofocus>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Số điện thoại</label>
+          <input type="tel" id="mem-phone" class="form-control" placeholder="0901 234 567">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ghi chú</label>
+          <input type="text" id="mem-note" class="form-control" placeholder="VD: Hay uống cà phê đen...">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
+          <button class="btn btn-primary" onclick="App._saveNewMember()">
+            ${ic('user-plus')} Thêm thành viên
+          </button>
+        </div>
+      </div>`);
+  },
+
+  _saveNewMember() {
+    const name  = document.getElementById('mem-name')?.value.trim();
+    const phone = document.getElementById('mem-phone')?.value.trim();
+    const note  = document.getElementById('mem-note')?.value.trim();
+    if (!name) { Toast.show('Vui lòng nhập tên thành viên!', 'error'); return; }
+    Store.addMember({ name, phone, note });
+    Modal.close();
+    Toast.show(`Đã thêm thành viên ${name}! 🎉`, 'success');
+    this.renderMembersPage();
+  },
+
+  editMemberModal(id) {
+    const m = Store.getMember(id);
+    if (!m) return;
+    const rank = this._memberRank(m.points);
+    Modal.show(`
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">${ic('pencil', 20)} Chỉnh sửa thành viên</div>
+          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tên thành viên</label>
+          <input type="text" id="em-name" class="form-control" value="${m.name}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Số điện thoại</label>
+          <input type="tel" id="em-phone" class="form-control" value="${m.phone || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ghi chú</label>
+          <input type="text" id="em-note" class="form-control" value="${m.note || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Điểm tích lũy hiện tại</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="number" id="em-points" class="form-control" value="${m.points}" min="0">
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:${rank.color};font-weight:700;white-space:nowrap">${rank.labelHtml}</span>
+          </div>
+          <div class="form-hint">Có thể điều chỉnh điểm thủ công nếu cần</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
+          <button class="btn btn-primary" onclick="App._saveEditMember('${id}')">
+            ${ic('save')} Lưu thay đổi
+          </button>
+        </div>
+      </div>`);
+  },
+
+  _saveEditMember(id) {
+    const name   = document.getElementById('em-name')?.value.trim();
+    const phone  = document.getElementById('em-phone')?.value.trim();
+    const note   = document.getElementById('em-note')?.value.trim();
+    const points = parseInt(document.getElementById('em-points')?.value) || 0;
+    if (!name) { Toast.show('Vui lòng nhập tên thành viên!', 'error'); return; }
+    Store.updateMember(id, { name, phone, note, points });
+    Modal.close();
+    Toast.show('Đã cập nhật thông tin thành viên!', 'success');
+    this.renderMembersPage();
+  },
+
+  deleteMember(id) {
+    const m = Store.getMember(id);
+    if (!m) return;
+    Modal.show(`
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title" style="color:var(--danger)">${ic('trash-2', 20)} Xóa thành viên</div>
+          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
+        </div>
+        <p style="color:var(--text-secondary);margin-bottom:24px">
+          Bạn có chắc muốn xóa thành viên <strong style="color:var(--text-primary)">${m.name}</strong>?<br>
+          Toàn bộ điểm tích lũy sẽ bị mất. Không thể hoàn tác.
+        </p>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
+          <button class="btn btn-danger" onclick="App._doDeleteMember('${id}')">
+            ${ic('trash-2')} Xóa thành viên
+          </button>
+        </div>
+      </div>`);
+  },
+
+  _doDeleteMember(id) {
+    const m = Store.getMember(id);
+    Store.deleteMember(id);
+    Modal.close();
+    Toast.show(`Đã xóa thành viên ${m?.name}!`, 'info');
+    this.renderMembersPage();
+  },
+
+  searchMembers(query) {
+    const q       = query.toLowerCase().trim();
+    const members = Store.getMembers();
+    const grid    = document.getElementById('members-grid');
+    if (!grid) return;
+    const filtered = q
+      ? members.filter(m =>
+          m.name.toLowerCase().includes(q) ||
+          (m.phone || '').includes(q)
+        )
+      : members;
+    if (filtered.length === 0) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:40px 0">${ic('search',36)}<p style="margin-top:10px">Không tìm thấy thành viên nào</p></div>`;
+    } else {
+      grid.innerHTML = filtered.map(m => this._memberCardHTML(m)).join('');
+    }
+    lucide.createIcons({ nodes: [grid] });
+  },
+
   // ────────────────────────────── SETTINGS ──────────────────────────────
 
   renderSettings() {
@@ -1601,6 +2007,57 @@ const App = {
     s('s-phone',   cfg.shopPhone);
     s('s-price',   cfg.defaultPricePerHour);
     s('s-footer',  cfg.footerNote);
+    this._renderRankSettings();
+  },
+
+  /** Draws per-rank discount + minPoints inputs in the settings card */
+  _renderRankSettings() {
+    const el = document.getElementById('rank-settings-list');
+    if (!el) return;
+    const ranks = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
+    el.innerHTML = ranks.map((rank, idx) => {
+      const pal = this._RANK_PALETTE[rank.id] || this._RANK_PALETTE.dong;
+      return `
+        <div class="rank-setting-row">
+          <span class="rank-setting-icon" style="background:${pal.bg};color:${pal.color};border-color:${pal.border}">
+            ${ic(rank.icon, 16)}
+          </span>
+          <span class="rank-setting-label" style="color:${pal.color}">${rank.label}</span>
+          <div class="rank-setting-field" style="flex:1">
+            <label>${ic('star',11)} Từ điểm</label>
+            <input type="number" class="form-control" id="rs-min-${rank.id}"
+              value="${rank.minPoints}" min="0" step="1"
+              ${idx === 0 ? 'readonly title="Hạng cơ sở luôn bắt đầu từ 0"' : ''}>
+          </div>
+          <div class="rank-setting-field">
+            <label>${ic('tag',11)} Giảm %</label>
+            <input type="number" class="form-control" id="rs-disc-${rank.id}"
+              value="${rank.discount}" min="0" max="100" step="1">
+          </div>
+        </div>`;
+    }).join('');
+    lucide.createIcons({ nodes: [el] });
+  },
+
+  /** Saves admin-configured rank discounts to store */
+  saveRankSettings() {
+    const ranks = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
+    const updated = ranks.map((rank, idx) => ({
+      ...rank,
+      minPoints: idx === 0 ? 0 : (parseInt(document.getElementById(`rs-min-${rank.id}`)?.value) || rank.minPoints),
+      discount:  parseInt(document.getElementById(`rs-disc-${rank.id}`)?.value) ?? rank.discount,
+    }));
+    // Validate: each rank's minPoints must be strictly greater than the previous
+    for (let i = 1; i < updated.length; i++) {
+      if (updated[i].minPoints <= updated[i - 1].minPoints) {
+        Toast.show(`Ngưỡng điểm hạng "${updated[i].label}" phải lớn hơn hạng "${updated[i-1].label}"!`, 'error');
+        return;
+      }
+    }
+    Store.setRankSettings(updated);
+    Toast.show('Đã lưu cài đặt hạng thành viên!', 'success');
+    // Refresh the rank legend if on members page
+    this._renderMemberRankLegend();
   },
 
   saveSettings() {
