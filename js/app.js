@@ -892,10 +892,10 @@ const App = {
 
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
-          <button class="btn btn-ghost" onclick="App.finalizePayment('${tableId}', false)">
+          <button class="btn btn-ghost checkout-btn-confirm" onclick="App.finalizePayment('${tableId}', false)">
             ${ic('check')} Thanh toán
           </button>
-          <button class="btn btn-primary" onclick="App.finalizePayment('${tableId}', true)">
+          <button class="btn btn-primary checkout-btn-confirm" onclick="App.finalizePayment('${tableId}', true)">
             ${ic('printer')} Thanh toán & In hóa đơn
           </button>
         </div>
@@ -912,6 +912,8 @@ const App = {
     const totalEl = document.getElementById('checkout-total');
     if (discEl)  discEl.textContent  = `— ${formatMoney(discount)}`;
     if (totalEl) totalEl.textContent = formatMoney(total);
+
+    this._onPaymentMethodChange('discount-pct', subtotal);
   },
 
   finalizePayment(tableId, shouldPrint) {
@@ -927,6 +929,32 @@ const App = {
     const discount    = Math.round(subtotal * discountPct / 100);
     const total       = subtotal - discount;
     const memberId    = document.getElementById('checkout-member-select')?.value || null;
+    const payRadio    = document.querySelector('input[name="pay_method_discount-pct"]:checked');
+    const paymentMethod = (memberId && payRadio) ? payRadio.value : 'cash';
+
+    let memberBalanceBefore = 0;
+    let memberBalanceAfter = 0;
+    let memberName = '';
+    let memberRank = '';
+
+    if (memberId) {
+      const member = Store.getMember(memberId);
+      if (member) {
+        memberName = member.name;
+        const rank = this._memberRank(member.points);
+        memberRank = rank.label;
+
+        if (paymentMethod === 'member_balance') {
+          memberBalanceBefore = member.balance || 0;
+          if (memberBalanceBefore < total) {
+            Toast.show('Số dư tài khoản thành viên không đủ!', 'error');
+            return;
+          }
+          const res = Store.deductMemberBalance(memberId, total, null, `Thanh toán ${table.name}`);
+          memberBalanceAfter = res.member.balance;
+        }
+      }
+    }
 
     const invoice = Store.addInvoice({
       tableName:      table.name,
@@ -942,20 +970,23 @@ const App = {
       discount,
       subtotal,
       total,
-      memberId: memberId || null,
+      memberId:       memberId || null,
+      memberName,
+      memberRank,
+      paymentMethod,
+      memberBalanceBefore,
+      memberBalanceAfter,
     });
 
-    // Award member points & update history
     if (memberId) {
       Store.addMemberPoints(memberId, 1, total);
-      const member = Store.getMember(memberId);
-      if (member) Toast.show(`+1 điểm cho ${member.name} 🎉`, 'info', 2500);
+      if (memberName) Toast.show(`+1 điểm cho ${memberName} 🎱`, 'info', 2500);
     }
 
     Store.endSession(tableId);
     this.checkoutTableId = null;
     Modal.close();
-    Toast.show(`Đã thanh toán ${formatMoney(total)}! 🎉`, 'success');
+    Toast.show(`Đã thanh toán ${table.name}! Tổng: ${formatMoney(total)}`, 'success');
     this.renderTables();
     if (shouldPrint) setTimeout(() => this.printInvoice(invoice), 400);
   },
@@ -989,6 +1020,18 @@ const App = {
         </div>
       </div>
 
+      ${invoice.memberName ? `
+        <div class="invoice-member-info">
+          <div style="font-weight:800">👤 KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
+          <div>PTTT: <strong>${invoice.paymentMethod === 'member_balance' ? 'Trừ số dư tài khoản' : 'Tiền mặt / Chuyển khoản'}</strong></div>
+          ${invoice.paymentMethod === 'member_balance' ? `
+            <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Số tiền trừ:</span><span>-${formatMoney(invoice.total)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:900"><span>Số dư còn lại:</span><span>${formatMoney(invoice.memberBalanceAfter)}</span></div>
+          ` : ''}
+        </div>
+      ` : ''}
+
       <div class="invoice-section-title">CHI TIẾT HÓA ĐƠN</div>
       <div class="invoice-item">
         <span class="item-name">Tiền bàn bida</span>
@@ -1009,7 +1052,7 @@ const App = {
 
       <div class="invoice-subtotal-row"><span>Tiền bàn</span><span>${formatMoney(invoice.tableBill)}</span></div>
       ${invoice.foodBill > 0 ? `<div class="invoice-subtotal-row"><span>Đồ ăn & thức uống</span><span>${formatMoney(invoice.foodBill)}</span></div>` : ''}
-      ${invoice.discount > 0 ? `<div class="invoice-subtotal-row" style="color:#ef4444"><span>Giảm giá (${invoice.discountPct}%)</span><span>- ${formatMoney(invoice.discount)}</span></div>` : ''}
+      ${invoice.discount > 0 ? `<div class="invoice-subtotal-row"><span>Giảm giá (${invoice.discountPct}%)</span><span>- ${formatMoney(invoice.discount)}</span></div>` : ''}
 
       <div class="invoice-total-bar">
         <span>TỔNG CỘNG</span>
@@ -1049,6 +1092,16 @@ const App = {
                 <span>${item.emoji} ${item.name} × ${item.quantity}</span>
                 <span class="value">${formatMoney(item.price * item.quantity)}</span>
               </div>`).join('')}
+          </div>` : ''}
+        ${inv.memberName ? `
+          <div class="checkout-section" style="background:var(--bg-subtle,#f8fafc);padding:10px;border-radius:8px;border:1px solid var(--border-color,#e2e8f0)">
+            <div class="checkout-section-title">${ic('user-check', 14)} Thông tin Thành viên</div>
+            <div class="checkout-row"><span>Khách hàng</span><span class="value" style="font-weight:700">${inv.memberName} ${inv.memberRank ? `(${inv.memberRank})` : ''}</span></div>
+            <div class="checkout-row"><span>Hình thức PTTT</span><span class="value">${inv.paymentMethod === 'member_balance' ? '💳 Trừ số dư tài khoản' : '💵 Tiền mặt / CK'}</span></div>
+            ${inv.paymentMethod === 'member_balance' ? `
+              <div class="checkout-row"><span>Số dư trước TT</span><span class="value">${formatMoney(inv.memberBalanceBefore)}</span></div>
+              <div class="checkout-row"><span>Số dư còn lại</span><span class="value" style="color:#047857;font-weight:700">${formatMoney(inv.memberBalanceAfter)}</span></div>
+            ` : ''}
           </div>` : ''}
         <div class="checkout-section">
           <div class="checkout-row"><span>Tạm tính</span><span class="value">${formatMoney(inv.subtotal)}</span></div>
@@ -1540,10 +1593,10 @@ const App = {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
-          <button class="btn btn-ghost" onclick="App._finalizeCafeBill(false)">
+          <button class="btn btn-ghost checkout-btn-confirm" onclick="App._finalizeCafeBill(false)">
             ${ic('check')} Thanh toán
           </button>
-          <button class="btn btn-primary" onclick="App._finalizeCafeBill(true)">
+          <button class="btn btn-primary checkout-btn-confirm" onclick="App._finalizeCafeBill(true)">
             ${ic('printer')} Thanh toán & In
           </button>
         </div>
@@ -1558,6 +1611,8 @@ const App = {
     const totEl  = document.getElementById('cafe-checkout-total');
     if (discEl) discEl.textContent = `— ${formatMoney(disc)}`;
     if (totEl)  totEl.textContent  = formatMoney(tot);
+
+    this._onPaymentMethodChange('cafe-discount-pct', subtotal);
   },
 
   _finalizeCafeBill(shouldPrint) {
@@ -1566,6 +1621,32 @@ const App = {
     const discount    = Math.round(foodBill * discountPct / 100);
     const total       = foodBill - discount;
     const memberId    = document.getElementById('checkout-member-select')?.value || null;
+    const payRadio    = document.querySelector('input[name="pay_method_cafe-discount-pct"]:checked');
+    const paymentMethod = (memberId && payRadio) ? payRadio.value : 'cash';
+
+    let memberBalanceBefore = 0;
+    let memberBalanceAfter = 0;
+    let memberName = '';
+    let memberRank = '';
+
+    if (memberId) {
+      const member = Store.getMember(memberId);
+      if (member) {
+        memberName = member.name;
+        const rank = this._memberRank(member.points);
+        memberRank = rank.label;
+
+        if (paymentMethod === 'member_balance') {
+          memberBalanceBefore = member.balance || 0;
+          if (memberBalanceBefore < total) {
+            Toast.show('Số dư tài khoản thành viên không đủ!', 'error');
+            return;
+          }
+          const res = Store.deductMemberBalance(memberId, total, null, 'Thanh toán Bill Cafe');
+          memberBalanceAfter = res.member.balance;
+        }
+      }
+    }
 
     const invoice = Store.addInvoice({
       tableName:      'Bill Cafe',
@@ -1583,13 +1664,16 @@ const App = {
       total,
       type:           'cafe',
       memberId:       memberId || null,
+      memberName,
+      memberRank,
+      paymentMethod,
+      memberBalanceBefore,
+      memberBalanceAfter,
     });
 
-    // Award member points & update history
     if (memberId) {
       Store.addMemberPoints(memberId, 1, total);
-      const member = Store.getMember(memberId);
-      if (member) Toast.show(`+1 điểm cho ${member.name} ☕`, 'info', 2500);
+      if (memberName) Toast.show(`+1 điểm cho ${memberName} ☕`, 'info', 2500);
     }
 
     this._cafeCart = [];
@@ -1612,6 +1696,19 @@ const App = {
         <div class="invoice-number">Bill Cafe #${invoice.id.replace('inv_','').slice(-6)}</div>
         <div class="invoice-date-text">${formatDateTime(invoice.createdAt)}</div>
       </div>
+
+      ${invoice.memberName ? `
+        <div class="invoice-member-info">
+          <div style="font-weight:800">👤 KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
+          <div>PTTT: <strong>${invoice.paymentMethod === 'member_balance' ? 'Trừ số dư tài khoản' : 'Tiền mặt / Chuyển khoản'}</strong></div>
+          ${invoice.paymentMethod === 'member_balance' ? `
+            <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Số tiền trừ:</span><span>-${formatMoney(invoice.total)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:900"><span>Số dư còn lại:</span><span>${formatMoney(invoice.memberBalanceAfter)}</span></div>
+          ` : ''}
+        </div>
+      ` : ''}
+
       <div class="invoice-section-title">ĐỒ UỐNG & ĐỒ ĂN</div>
       ${invoice.foodItems.map(item => `
         <div class="invoice-item">
@@ -1620,7 +1717,7 @@ const App = {
           <span class="item-price">${formatMoney(item.price * item.quantity)}</span>
         </div>`).join('')}
       <div class="invoice-divider-dashed"></div>
-      ${invoice.discount > 0 ? `<div class="invoice-subtotal-row" style="color:#dc2626"><span>Giảm (${invoice.discountPct}%)</span><span>- ${formatMoney(invoice.discount)}</span></div>` : ''}
+      ${invoice.discount > 0 ? `<div class="invoice-subtotal-row"><span>Giảm (${invoice.discountPct}%)</span><span>- ${formatMoney(invoice.discount)}</span></div>` : ''}
       <div class="invoice-total-bar">
         <span>TỔNG CỘNG</span>
         <span>${formatMoney(invoice.total)}</span>
@@ -1692,68 +1789,147 @@ const App = {
   /** Renders the member selector HTML block for checkout modals */
   _memberSelectorHTML(discountInputId, subtotal) {
     const members = Store.getMembers();
-    if (!members.length) return '';
     const options = members.map(m => {
       const rank = this._memberRank(m.points);
-      const discStr = rank.discount > 0 ? `−${rank.discount}%` : 'không giảm';
-      return `<option value="${m.id}">${m.name}${m.phone ? ' · ' + m.phone : ''} — ${rank.label} (${discStr})</option>`;
+      return `<option value="${m.id}">${m.name} (${rank.label} - Dư: ${formatMoney(m.balance || 0)})</option>`;
     }).join('');
+
     return `
-      <div class="member-selector-wrap">
-        <div class="member-selector-title">${ic('users', 12)} Áp dụng thành viên</div>
+      <div class="member-selector-wrap" style="background:var(--bg-subtle, #f8fafc);padding:12px;border-radius:10px;border:1px solid var(--border-color,#e2e8f0);margin-bottom:14px">
+        <div class="member-selector-title" style="font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          ${ic('users', 14)} Khách hàng & Hình thức Thanh toán
+        </div>
         <div class="member-selector-row">
-          <select class="member-selector-select" id="checkout-member-select"
-            onchange="App._applyMemberDiscount('${discountInputId}', ${subtotal})">
-            <option value="">— Không áp dụng —</option>
+          <select class="member-selector-select form-control" id="checkout-member-select"
+            onchange="App._onCheckoutMemberChange('${discountInputId}', ${subtotal})">
+            <option value="">— Khách lẻ (Tiền mặt / Chuyển khoản) —</option>
             ${options}
           </select>
         </div>
-        <div id="checkout-member-chip"></div>
+        
+        <div id="checkout-member-chip" style="margin-top:8px"></div>
+
+        <div id="payment-method-box" style="margin-top:10px;display:none;border-top:1px dashed #cbd5e1;padding-top:10px">
+          <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Hình thức thanh toán:</label>
+          <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="radio" name="pay_method_${discountInputId}" value="cash" checked onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
+              💵 Tiền mặt / CK
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="radio" name="pay_method_${discountInputId}" value="member_balance" onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
+              💳 Trừ tài khoản TV
+            </label>
+          </div>
+          <div id="payment-method-notice"></div>
+        </div>
       </div>`;
   },
 
-  /** Auto-fills discount % from member rank and shows an info chip */
-  _applyMemberDiscount(discountInputId, subtotal) {
-    const memberId    = document.getElementById('checkout-member-select')?.value;
-    const discountInput = document.getElementById(discountInputId);
-    const chipEl      = document.getElementById('checkout-member-chip');
+  _onCheckoutMemberChange(discountInputId, subtotal) {
+    const memberId = document.getElementById('checkout-member-select')?.value;
+    const pmBox = document.getElementById('payment-method-box');
+    const chipEl = document.getElementById('checkout-member-chip');
+
     if (!memberId) {
-      if (discountInput) discountInput.value = 0;
+      if (pmBox) pmBox.style.display = 'none';
       if (chipEl) chipEl.innerHTML = '';
-      if (discountInputId === 'cafe-discount-pct') {
-        this._updateCafeTotal(subtotal);
-      } else {
-        const totEl  = document.getElementById('checkout-total');
-        const discEl = document.getElementById('discount-amount');
-        if (discEl) discEl.textContent = '— 0đ';
-        if (totEl)  totEl.textContent  = formatMoney(subtotal);
-      }
+      this._applyMemberDiscount(discountInputId, subtotal, null);
       return;
     }
+
+    if (pmBox) pmBox.style.display = 'block';
     const member = Store.getMember(memberId);
     if (!member) return;
+
     const rank = this._memberRank(member.points);
-    if (discountInput) discountInput.value = rank.discount;
     if (chipEl) {
-      const chipStyle = rank.discount > 0
-        ? `background:${rank.bg};border-color:${rank.border};color:${rank.color}`
-        : 'background:var(--bg-tertiary);border-color:var(--border);color:var(--text-muted)';
-      const discLabel = rank.discount > 0 ? `giảm ${rank.discount}%` : 'không giảm';
-      chipEl.innerHTML = `<span class="member-selected-chip" style="${chipStyle}">
-        ${ic('user-check', 12)} ${member.name} — ${rank.labelHtml} — ${discLabel}
-      </span>`;
+      chipEl.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;border:1px solid #bbf7d0;padding:6px 10px;border-radius:8px;font-size:12px">
+          <div>
+            <span style="font-weight:700;color:#166534">${member.name}</span>
+            <span style="margin-left:6px;color:${rank.color};font-weight:600">${rank.labelHtml} (${rank.discount > 0 ? 'Giảm ' + rank.discount + '%' : 'Không giảm'})</span>
+          </div>
+          <span style="font-weight:800;color:#15803d">💳 Số dư: ${formatMoney(member.balance || 0)}</span>
+        </div>`;
       lucide.createIcons({ nodes: [chipEl] });
     }
-    // Recalculate total
+
+    this._applyMemberDiscount(discountInputId, subtotal, member);
+    this._onPaymentMethodChange(discountInputId, subtotal);
+  },
+
+  _onPaymentMethodChange(discountInputId, subtotal) {
+    const memberId = document.getElementById('checkout-member-select')?.value;
+    const member = memberId ? Store.getMember(memberId) : null;
+    const radioVal = document.querySelector(`input[name="pay_method_${discountInputId}"]:checked`)?.value || 'cash';
+    const noticeEl = document.getElementById('payment-method-notice');
+
+    // Calculate current total
+    let totalPayable = subtotal;
+    if (discountInputId === 'cafe-discount-pct') {
+      const pct = parseFloat(document.getElementById('cafe-discount-pct')?.value) || 0;
+      totalPayable = subtotal - Math.round(subtotal * pct / 100);
+    } else {
+      const pct = parseFloat(document.getElementById('discount-pct')?.value) || 0;
+      totalPayable = subtotal - Math.round(subtotal * pct / 100);
+    }
+
+    const confirmBtns = document.querySelectorAll('.checkout-btn-confirm');
+
+    if (radioVal === 'member_balance' && member) {
+      const currentBal = member.balance || 0;
+      if (currentBal >= totalPayable) {
+        const remaining = currentBal - totalPayable;
+        if (noticeEl) {
+          noticeEl.innerHTML = `
+            <div style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600">
+              ✅ Số dư đủ thanh toán. Số dư còn lại sau bill: <strong>${formatMoney(remaining)}</strong>
+            </div>`;
+        }
+        confirmBtns.forEach(btn => btn.disabled = false);
+      } else {
+        const need = totalPayable - currentBal;
+        if (noticeEl) {
+          noticeEl.innerHTML = `
+            <div style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:8px 10px;border-radius:6px;font-size:12px">
+              ⚠️ <strong>Số dư không đủ!</strong> (Thiếu <strong>${formatMoney(need)}</strong>).<br>
+              Vui lòng nộp thêm tiền hoặc chọn thanh toán Tiền mặt.
+              <div style="margin-top:6px">
+                <button class="btn btn-xs btn-success" type="button" style="padding:3px 8px;font-size:11px" onclick="App.depositMemberModal('${member.id}')">
+                  ${ic('plus-circle',12)} Nộp tiền cho ${member.name}
+                </button>
+              </div>
+            </div>`;
+          lucide.createIcons({ nodes: [noticeEl] });
+        }
+        confirmBtns.forEach(btn => btn.disabled = true);
+      }
+    } else {
+      if (noticeEl) noticeEl.innerHTML = '';
+      confirmBtns.forEach(btn => btn.disabled = false);
+    }
+  },
+
+  _applyMemberDiscount(discountInputId, subtotal, member) {
+    const discountInput = document.getElementById(discountInputId);
+    if (!member) {
+      if (discountInput) discountInput.value = 0;
+    } else {
+      const rank = this._memberRank(member.points);
+      if (discountInput) discountInput.value = rank.discount;
+    }
+
     if (discountInputId === 'cafe-discount-pct') {
       this._updateCafeTotal(subtotal);
     } else {
-      const discount = Math.round(subtotal * rank.discount / 100);
-      const total    = subtotal - discount;
-      const discEl   = document.getElementById('discount-amount');
-      const totEl    = document.getElementById('checkout-total');
+      const pct = parseFloat(discountInput?.value) || 0;
+      const discount = Math.round(subtotal * pct / 100);
+      const total = subtotal - discount;
+      const discEl = document.getElementById('discount-amount');
+      const totEl = document.getElementById('checkout-total');
       if (discEl) discEl.textContent = `— ${formatMoney(discount)}`;
-      if (totEl)  totEl.textContent  = formatMoney(total);
+      if (totEl) totEl.textContent = formatMoney(total);
     }
   },
 
@@ -1808,7 +1984,15 @@ const App = {
           <div class="member-info">
             <div class="member-name">${member.name}</div>
             <div class="member-phone">${ic('phone',13)} ${member.phone || 'Chưa có SĐT'}</div>
-            ${member.note ? `<div class="member-note">${ic('message-circle',12)} ${member.note}</div>` : ''}
+            <div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="display:inline-flex;align-items:center;gap:4px;background:${(member.balance || 0) > 0 ? '#ecfdf5' : '#f3f4f6'};color:${(member.balance || 0) > 0 ? '#047857' : '#6b7280'};border:1px solid ${(member.balance || 0) > 0 ? '#a7f3d0' : '#e5e7eb'};font-weight:700;padding:2px 8px;border-radius:12px;font-size:12px">
+                💳 ${formatMoney(member.balance || 0)}
+              </span>
+              <button class="btn btn-success btn-sm" style="padding:2px 8px;font-size:11px;border-radius:8px" onclick="App.depositMemberModal('${member.id}')" title="Nộp tiền vào tài khoản">
+                ${ic('plus-circle', 12)} Nộp tiền
+              </button>
+            </div>
+            ${member.note ? `<div class="member-note" style="margin-top:4px">${ic('message-circle',12)} ${member.note}</div>` : ''}
           </div>
           <div class="member-card-actions">
             <button class="btn btn-ghost btn-icon btn-sm" onclick="App.editMemberModal('${member.id}')" title="Chỉnh sửa">${ic('pencil',14)}</button>
@@ -1850,12 +2034,122 @@ const App = {
             ${ic('star',13)} Hạng cao nhất — Ưu đãi ${topDiscount}%!
           </div>
         </div>`}
-
         ${rank.discount > 0 ? `
         <div class="member-discount-tag" style="background:${rank.bg};border-color:${rank.border};color:${rank.color}">
           ${ic('tag',13)} Được giảm ${rank.discount}% khi thanh toán
         </div>` : ''}
       </div>`;
+  },
+
+  depositMemberModal(id) {
+    const m = Store.getMember(id);
+    if (!m) return;
+    const bonusPct = Store.getDepositBonusPct();
+
+    Modal.show(`
+      <div class="modal" style="max-width:480px">
+        <div class="modal-header">
+          <div class="modal-title" style="color:var(--primary)">${ic('credit-card', 20)} Nộp tiền vào tài khoản</div>
+          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
+        </div>
+        
+        <div style="background:var(--bg-subtle, #f8fafc);border-radius:12px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border-color, #e2e8f0);">
+          <div>
+            <div style="font-weight:700;font-size:15px;color:var(--text-primary)">${m.name}</div>
+            <div style="font-size:12px;color:var(--text-secondary)">${m.phone || 'Chưa có SĐT'}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text-muted)">Số dư hiện tại</div>
+            <div style="font-weight:800;font-size:16px;color:#10b981">${formatMoney(m.balance || 0)}</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600">Chọn nhanh mệnh giá:</label>
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:12px">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(50000)">50.000đ</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(100000)">100.000đ</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(200000)">200.000đ</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(500000)">500.000đ</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(1000000)">1.000.000đ</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App._setDepositAmount(2000000)">2.000.000đ</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600">Số tiền nộp (VNĐ) <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="dep-amount" class="form-control" placeholder="Ví dụ: 100000" value="100000" min="10000" step="10000" oninput="App._calcDepositSummary('${id}')">
+        </div>
+
+        <div id="dep-summary-box" style="background:#f0fdf4;border:1px dashed #86efac;border-radius:12px;padding:14px;margin-bottom:18px">
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
+          <button class="btn btn-success" onclick="App._doDepositMember('${id}')">
+            ${ic('check-circle')} Xác nhận nộp tiền
+          </button>
+        </div>
+      </div>`);
+
+    this._calcDepositSummary(id);
+  },
+
+  _setDepositAmount(amt) {
+    const input = document.getElementById('dep-amount');
+    if (input) {
+      input.value = amt;
+      input.dispatchEvent(new Event('input'));
+    }
+  },
+
+  _calcDepositSummary(memberId) {
+    const member = Store.getMember(memberId);
+    const box = document.getElementById('dep-summary-box');
+    if (!member || !box) return;
+
+    const amountInput = document.getElementById('dep-amount');
+    const amount = Number(amountInput?.value) || 0;
+    const bonusPct = Store.getDepositBonusPct();
+    const bonusAmount = Math.round(amount * bonusPct / 100);
+    const credit = amount + bonusAmount;
+    const newBalance = (member.balance || 0) + credit;
+
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span style="color:#374151">💰 Tiền nộp thực tế:</span>
+        <span style="font-weight:700;color:#111827">${formatMoney(amount)}</span>
+      </div>
+      ${bonusPct > 0 ? `
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;color:#16a34a">
+        <span>🎁 Khuyến mãi (+${bonusPct}%):</span>
+        <span style="font-weight:700">+${formatMoney(bonusAmount)}</span>
+      </div>` : ''}
+      <div style="border-top:1px dashed #bbf7d0;margin:6px 0;padding-top:6px;display:flex;justify-content:space-between;font-size:14px">
+        <span style="font-weight:700;color:#15803d">✅ Tổng cộng vào số dư:</span>
+        <span style="font-weight:800;color:#15803d">${formatMoney(credit)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px">
+        <span style="color:#4b5563">💳 Số dư sau khi nộp:</span>
+        <span style="font-weight:800;color:#047857">${formatMoney(newBalance)}</span>
+      </div>
+    `;
+  },
+
+  _doDepositMember(id) {
+    const amount = Number(document.getElementById('dep-amount')?.value);
+    if (!amount || amount <= 0) {
+      Toast.show('Vui lòng nhập số tiền nộp hợp lệ!', 'error');
+      return;
+    }
+    try {
+      const res = Store.depositMemberBalance(id, amount);
+      Modal.close();
+      Toast.show(`Đã nộp ${formatMoney(amount)} → +${formatMoney(res.record.credit)} vào tài khoản ${res.member.name}! 🎉`, 'success');
+      this.renderMembersPage();
+    } catch (err) {
+      Toast.show(err.message || 'Lỗi khi nộp tiền', 'error');
+    }
   },
 
   addMemberModal() {
@@ -1901,12 +2195,29 @@ const App = {
     const m = Store.getMember(id);
     if (!m) return;
     const rank = this._memberRank(m.points);
+
+    const historyItems = [
+      ...(m.depositHistory || []).map(d => ({ ...d, type: 'deposit' })),
+      ...(m.paymentHistory || []).map(p => ({ ...p, type: 'payment' }))
+    ].sort((a, b) => b.date - a.date);
+
     Modal.show(`
-      <div class="modal">
+      <div class="modal" style="max-width:520px">
         <div class="modal-header">
           <div class="modal-title">${ic('pencil', 20)} Chỉnh sửa thành viên</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
+
+        <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:12px;color:#047857;font-weight:600">Số dư tài khoản</div>
+            <div style="font-weight:800;font-size:18px;color:#047857">${formatMoney(m.balance || 0)}</div>
+          </div>
+          <button class="btn btn-success btn-sm" type="button" onclick="App.depositMemberModal('${m.id}')">
+            ${ic('plus-circle', 14)} Nộp tiền ngay
+          </button>
+        </div>
+
         <div class="form-group">
           <label class="form-label">Tên thành viên</label>
           <input type="text" id="em-name" class="form-control" value="${m.name}">
@@ -1927,6 +2238,30 @@ const App = {
           </div>
           <div class="form-hint">Có thể điều chỉnh điểm thủ công nếu cần</div>
         </div>
+
+        <div class="form-group">
+          <label class="form-label">${ic('history', 14)} Lịch sử nộp & dùng tiền</label>
+          <div style="max-height:160px;overflow-y:auto;border:1px solid var(--border-color, #e2e8f0);border-radius:8px;font-size:12px;padding:8px;background:var(--bg-card, #ffffff)">
+            ${historyItems.length > 0 ? historyItems.map(item => item.type === 'deposit' ? `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #e2e8f0">
+                <div>
+                  <span style="color:#16a34a;font-weight:700">🟢 Nộp tiền</span>
+                  <span style="color:var(--text-muted);font-size:11px;margin-left:6px">${formatDateShort(item.date)}</span>
+                </div>
+                <span style="color:#16a34a;font-weight:700">+${formatMoney(item.credit)} <small style="color:var(--text-muted);font-weight:400">(gốc ${formatMoney(item.amount)} + ${item.bonusPct}%)</small></span>
+              </div>
+            ` : `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #e2e8f0">
+                <div>
+                  <span style="color:#dc2626;font-weight:700">🔴 Thanh toán bill</span>
+                  <span style="color:var(--text-muted);font-size:11px;margin-left:6px">${formatDateShort(item.date)}</span>
+                </div>
+                <span style="color:#dc2626;font-weight:700">-${formatMoney(item.amount)}</span>
+              </div>
+            `).join('') : `<div style="color:var(--text-muted);text-align:center;padding:12px">Chưa có lịch sử giao dịch</div>`}
+          </div>
+        </div>
+
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
           <button class="btn btn-primary" onclick="App._saveEditMember('${id}')">
@@ -2002,11 +2337,12 @@ const App = {
   renderSettings() {
     const cfg = Store.getSettings();
     const s   = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-    s('s-name',    cfg.shopName);
-    s('s-address', cfg.shopAddress);
-    s('s-phone',   cfg.shopPhone);
-    s('s-price',   cfg.defaultPricePerHour);
-    s('s-footer',  cfg.footerNote);
+    s('s-name',          cfg.shopName);
+    s('s-address',       cfg.shopAddress);
+    s('s-phone',         cfg.shopPhone);
+    s('s-price',         cfg.defaultPricePerHour);
+    s('s-footer',        cfg.footerNote);
+    s('s-deposit-bonus', Store.getDepositBonusPct());
     this._renderRankSettings();
   },
 
@@ -2061,6 +2397,10 @@ const App = {
   },
 
   saveSettings() {
+    const bonusVal = document.getElementById('s-deposit-bonus')?.value;
+    if (bonusVal !== undefined) {
+      Store.setDepositBonusPct(bonusVal);
+    }
     Store.setSettings({
       shopName:            document.getElementById('s-name').value.trim(),
       shopAddress:         document.getElementById('s-address').value.trim(),

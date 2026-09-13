@@ -49,6 +49,7 @@ const Store = (() => {
     shopAddress: 'Ngọc Sơn, Hành Thiện, Quảng Ngãi',
     shopPhone: '0901 234 567',
     defaultPricePerHour: 50000,
+    depositBonusPct: 20,
     footerNote: 'Cảm ơn quý khách! Hẹn gặp lại! 🎱',
   };
 
@@ -208,7 +209,16 @@ const Store = (() => {
 
   // ==================== MEMBERS ====================
 
-  const getMembers = () => _get('members') || [];
+  const getMembers = () => {
+    const members = _get('members') || [];
+    return members.map(m => ({
+      ...m,
+      balance: m.balance ?? 0,
+      depositHistory: m.depositHistory || [],
+      paymentHistory: m.paymentHistory || [],
+    }));
+  };
+
   const _setMembers = (m) => _set('members', m);
   const getMember = (id) => getMembers().find(m => m.id === id) || null;
 
@@ -220,6 +230,9 @@ const Store = (() => {
       points: 0,
       totalSpent: 0,
       visitCount: 0,
+      balance: 0,
+      depositHistory: [],
+      paymentHistory: [],
       createdAt: Date.now(),
     };
     members.push(member);
@@ -232,6 +245,71 @@ const Store = (() => {
 
   const deleteMember = (id) =>
     _setMembers(getMembers().filter(m => m.id !== id));
+
+  /**
+   * Nộp tiền vào tài khoản thành viên - tính % khuyến mãi từ Settings
+   */
+  const depositMemberBalance = (id, amount) => {
+    const members = getMembers();
+    const idx = members.findIndex(m => m.id === id);
+    if (idx === -1) throw new Error('Không tìm thấy thành viên');
+    
+    const numAmount = Number(amount) || 0;
+    if (numAmount <= 0) throw new Error('Số tiền nộp phải lớn hơn 0');
+
+    const bonusPct = getDepositBonusPct();
+    const bonusAmount = Math.round(numAmount * bonusPct / 100);
+    const credit = numAmount + bonusAmount;
+
+    const record = {
+      id: `dep_${Date.now()}`,
+      date: Date.now(),
+      amount: numAmount,
+      bonusPct,
+      bonusAmount,
+      credit,
+    };
+
+    const member = members[idx];
+    member.balance = (member.balance || 0) + credit;
+    if (!member.depositHistory) member.depositHistory = [];
+    member.depositHistory.unshift(record);
+
+    _setMembers(members);
+    return { member, record };
+  };
+
+  /**
+   * Trừ tiền trong tài khoản khi thanh toán bằng số dư thành viên
+   */
+  const deductMemberBalance = (id, amount, invoiceId = null, note = '') => {
+    const members = getMembers();
+    const idx = members.findIndex(m => m.id === id);
+    if (idx === -1) throw new Error('Không tìm thấy thành viên');
+
+    const numAmount = Number(amount) || 0;
+    const member = members[idx];
+    const currentBalance = member.balance || 0;
+
+    if (currentBalance < numAmount) {
+      throw new Error(`Số dư không đủ! Cần ${numAmount.toLocaleString('vi-VN')}đ, hiện có ${currentBalance.toLocaleString('vi-VN')}đ`);
+    }
+
+    const record = {
+      id: `pay_${Date.now()}`,
+      date: Date.now(),
+      amount: numAmount,
+      invoiceId,
+      note,
+    };
+
+    member.balance = currentBalance - numAmount;
+    if (!member.paymentHistory) member.paymentHistory = [];
+    member.paymentHistory.unshift(record);
+
+    _setMembers(members);
+    return { member, record };
+  };
 
   /**
    * Adds points, increments visitCount, and adds to totalSpent.
@@ -259,6 +337,17 @@ const Store = (() => {
 
   const getSettings = () => ({ ...DEFAULT_SETTINGS, ...(_get('settings') || {}) });
   const setSettings = (data) => _set('settings', { ...getSettings(), ...data });
+
+  const getDepositBonusPct = () => {
+    const settings = getSettings();
+    const pct = Number(settings.depositBonusPct);
+    return isNaN(pct) ? 20 : Math.max(0, Math.min(100, pct));
+  };
+
+  const setDepositBonusPct = (pct) => {
+    const val = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    setSettings({ depositBonusPct: val });
+  };
 
   // ==================== BILLING CALCULATIONS ====================
 
@@ -304,6 +393,8 @@ const Store = (() => {
     getInvoices, addInvoice, deleteInvoice,
     getMenu, addMenuItem, updateMenuItem, deleteMenuItem,
     getMembers, getMember, addMember, updateMember, deleteMember, addMemberPoints,
+    depositMemberBalance, deductMemberBalance,
+    getDepositBonusPct, setDepositBonusPct,
     getSettings, setSettings,
     getRankSettings, setRankSettings,
     getElapsedSeconds, calcTableBill, calcFoodBill,
