@@ -50,7 +50,7 @@ const Store = (() => {
     shopPhone: '0901 234 567',
     defaultPricePerHour: 50000,
     depositBonusPct: 20,
-    footerNote: 'Cảm ơn quý khách! Hẹn gặp lại! 🎱',
+    footerNote: 'Cảm ơn quý khách! Hẹn gặp lại!',
   };
 
   // Hạng thành viên mặc định — admin có thể chỉnh % giảm trong Cài đặt

@@ -50,6 +50,7 @@ const Toast = {
     }, duration);
   },
 };
+window.Toast = Toast;
 
 // ==================== MODAL ====================
 
@@ -58,12 +59,17 @@ const Modal = {
 
   init() {
     this._overlay = document.getElementById('modal-overlay');
-    this._overlay.addEventListener('click', (e) => {
-      if (e.target === this._overlay) this.close();
-    });
+    if (this._overlay) {
+      this._overlay.addEventListener('click', (e) => {
+        if (e.target === this._overlay || e.target.closest('.modal-close')) {
+          this.close();
+        }
+      });
+    }
   },
 
   show(html) {
+    if (!this._overlay) this.init();
     this._overlay.innerHTML = html;
     this._overlay.classList.remove('hidden');
     requestAnimationFrame(() => {
@@ -73,6 +79,7 @@ const Modal = {
   },
 
   close() {
+    if (!this._overlay) return;
     App.checkoutTableId = null; // clear checkout state
     this._overlay.classList.remove('visible');
     setTimeout(() => {
@@ -81,6 +88,7 @@ const Modal = {
     }, 300);
   },
 };
+window.Modal = Modal;
 
 // ==================== MAIN APP ====================
 
@@ -95,6 +103,10 @@ const App = {
   checkoutTableId: null,
 
   // ────────────────────────────── INIT ──────────────────────────────
+
+  closeModal() {
+    Modal.close();
+  },
 
   init() {
     Store.init();
@@ -676,9 +688,14 @@ const App = {
 
   // ────────────────────────────── FOOD ORDERS ──────────────────────────────
 
+  currentFoodTableId: null,
+  currentFoodCategory: 'Tất cả',
+  currentFoodSearch: '',
+
   openFoodModal(tableId) {
     this.currentFoodTableId  = tableId;
     this.currentFoodCategory = 'Tất cả';
+    this.currentFoodSearch   = '';
     this._drawFoodModal();
   },
 
@@ -699,13 +716,21 @@ const App = {
         <div class="food-modal-layout">
           <!-- LEFT: Menu -->
           <div class="food-left">
+            <div style="margin-bottom:10px;position:relative">
+              <input type="text" id="food-modal-search" class="form-control"
+                placeholder="🔍 Tìm nhanh tên món..."
+                value="${this.currentFoodSearch || ''}"
+                oninput="App.filterFoodModalSearch(this.value)"
+                style="padding-left:34px;font-size:13px" autofocus>
+              <i data-lucide="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text-muted)"></i>
+            </div>
             <div class="food-category-tabs" id="food-cat-tabs">
               ${cats.map(c => `
                 <button class="food-cat-tab ${c === this.currentFoodCategory ? 'active' : ''}"
                   onclick="App.setFoodCategory('${c}')" data-cat="${c}">${c}</button>`).join('')}
             </div>
             <div class="food-items-list" id="food-items-list">
-              ${this._menuItemsHTML(menu, this.currentFoodCategory)}
+              ${this._menuItemsHTML(menu, this.currentFoodCategory, this.currentFoodSearch)}
             </div>
           </div>
           <!-- RIGHT: Order -->
@@ -730,11 +755,21 @@ const App = {
           </button>
         </div>
       </div>`);
+
+    // Auto focus search input
+    setTimeout(() => {
+      const searchInput = document.getElementById('food-modal-search');
+      if (searchInput) searchInput.focus();
+    }, 100);
   },
 
-  _menuItemsHTML(menu, category) {
-    const filtered = category === 'Tất cả' ? menu : menu.filter(m => m.category === category);
-    if (!filtered.length) return `<div class="order-empty">${ic('package', 28)}<p>Không có món nào</p></div>`;
+  _menuItemsHTML(menu, category, searchQuery = '') {
+    let filtered = category === 'Tất cả' ? menu : menu.filter(m => m.category === category);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(m => (m.name || '').toLowerCase().includes(q) || (m.category || '').toLowerCase().includes(q));
+    }
+    if (!filtered.length) return `<div class="order-empty">${ic('package', 28)}<p>Không tìm thấy món nào</p></div>`;
     return filtered.map(item => {
       const thumb = item.image
         ? `<img class="food-img" src="${item.image}" alt="${item.name}" onerror="this.outerHTML='<div class=food-emoji-fallback>${item.emoji}</div>'">`
@@ -753,6 +788,15 @@ const App = {
           </button>
         </div>`;
     }).join('');
+  },
+
+  filterFoodModalSearch(query) {
+    this.currentFoodSearch = query || '';
+    const listEl = document.getElementById('food-items-list');
+    if (listEl) {
+      listEl.innerHTML = this._menuItemsHTML(Store.getMenu(), this.currentFoodCategory, this.currentFoodSearch);
+      lucide.createIcons({ nodes: [listEl] });
+    }
   },
 
   _orderItemsHTML(session) {
@@ -778,8 +822,7 @@ const App = {
     });
     const listEl = document.getElementById('food-items-list');
     if (listEl) {
-      listEl.innerHTML = this._menuItemsHTML(Store.getMenu(), category);
-      lucide.createIcons({ nodes: [listEl] });
+      listEl.innerHTML = this._menuItemsHTML(Store.getMenu(), category, this.currentFoodSearch);
     }
   },
 
@@ -980,7 +1023,7 @@ const App = {
 
     if (memberId) {
       Store.addMemberPoints(memberId, 1, total);
-      if (memberName) Toast.show(`+1 điểm cho ${memberName} 🎱`, 'info', 2500);
+      if (memberName) Toast.show(`+1 điểm tích lũy cho ${memberName}`, 'info', 2500);
     }
 
     Store.endSession(tableId);
@@ -1002,7 +1045,7 @@ const App = {
     const printArea = document.getElementById('print-area');
     printArea.innerHTML = `
       <div class="invoice-header">
-        <div class="invoice-logo">🎱</div>
+        <div class="invoice-logo">${ic('circle-dot', 32)}</div>
         <div class="invoice-shop-name">${settings.shopName}</div>
         <div class="invoice-shop-info">${settings.shopAddress}</div>
         <div class="invoice-shop-info">Hotline: ${settings.shopPhone}</div>
@@ -1012,7 +1055,7 @@ const App = {
       </div>
 
       <div class="invoice-table-info">
-        <div class="invoice-table-name">🎱 ${invoice.tableName}</div>
+        <div class="invoice-table-name">${ic('circle-dot', 18)} ${invoice.tableName}</div>
         <div class="invoice-time-detail">
           Bắt đầu: ${formatDateTime(invoice.startTime)}<br>
           Kết thúc: ${formatDateTime(invoice.endTime)}<br>
@@ -1022,7 +1065,7 @@ const App = {
 
       ${invoice.memberName ? `
         <div class="invoice-member-info">
-          <div style="font-weight:800">👤 KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
+          <div style="font-weight:800">${ic('user', 14)} KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
           <div>PTTT: <strong>${invoice.paymentMethod === 'member_balance' ? 'Trừ số dư tài khoản' : 'Tiền mặt / Chuyển khoản'}</strong></div>
           ${invoice.paymentMethod === 'member_balance' ? `
             <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
@@ -1043,7 +1086,7 @@ const App = {
         <div class="invoice-divider-solid"></div>
         ${invoice.foodItems.map(item => `
           <div class="invoice-item">
-            <span class="item-name">${item.emoji} ${item.name}</span>
+            <span class="item-name">${ic('utensils', 12)} ${item.name}</span>
             <span class="item-detail">× ${item.quantity}</span>
             <span class="item-price">${formatMoney(item.price * item.quantity)}</span>
           </div>`).join('')}` : ''}
@@ -1064,6 +1107,7 @@ const App = {
         <div>In lúc: ${formatDateTime(Date.now())}</div>
       </div>`;
 
+    lucide.createIcons({ nodes: [printArea] });
     window.print();
   },
 
@@ -1089,7 +1133,7 @@ const App = {
             <div class="checkout-section-title">${ic('utensils', 14)} Đồ ăn & Thức uống</div>
             ${inv.foodItems.map(item => `
               <div class="checkout-row">
-                <span>${item.emoji} ${item.name} × ${item.quantity}</span>
+                <span>${ic('utensils', 12)} ${item.name} × ${item.quantity}</span>
                 <span class="value">${formatMoney(item.price * item.quantity)}</span>
               </div>`).join('')}
           </div>` : ''}
@@ -1097,7 +1141,7 @@ const App = {
           <div class="checkout-section" style="background:var(--bg-subtle,#f8fafc);padding:10px;border-radius:8px;border:1px solid var(--border-color,#e2e8f0)">
             <div class="checkout-section-title">${ic('user-check', 14)} Thông tin Thành viên</div>
             <div class="checkout-row"><span>Khách hàng</span><span class="value" style="font-weight:700">${inv.memberName} ${inv.memberRank ? `(${inv.memberRank})` : ''}</span></div>
-            <div class="checkout-row"><span>Hình thức PTTT</span><span class="value">${inv.paymentMethod === 'member_balance' ? '💳 Trừ số dư tài khoản' : '💵 Tiền mặt / CK'}</span></div>
+            <div class="checkout-row"><span>Hình thức PTTT</span><span class="value" style="display:inline-flex;align-items:center;gap:4px">${inv.paymentMethod === 'member_balance' ? ic('credit-card',14) + ' Trừ số dư tài khoản' : ic('banknote',14) + ' Tiền mặt / CK'}</span></div>
             ${inv.paymentMethod === 'member_balance' ? `
               <div class="checkout-row"><span>Số dư trước TT</span><span class="value">${formatMoney(inv.memberBalanceBefore)}</span></div>
               <div class="checkout-row"><span>Số dư còn lại</span><span class="value" style="color:#047857;font-weight:700">${formatMoney(inv.memberBalanceAfter)}</span></div>
@@ -1457,9 +1501,13 @@ const App = {
 
   // Cart state for the cafe-only bill page
   _cafeCart: [],
+  _cafeSearchQuery: '',
+  _currentCafeCat: 'Tất cả',
 
   renderCafeBill() {
     this._cafeCart = [];
+    this._cafeSearchQuery = '';
+    this._currentCafeCat = 'Tất cả';
     this._drawCafeBillPage();
   },
 
@@ -1471,22 +1519,44 @@ const App = {
     if (!grid) return;
 
     if (catFilters) {
-      catFilters.innerHTML = cats.map(c => `
-        <button class="food-cat-tab ${c === 'Tất cả' ? 'active' : ''}"
-          data-cat="${c}" onclick="App._filterCafeMenu('${c}')">${c}</button>`).join('');
+      catFilters.innerHTML = `
+        <div style="margin-bottom:10px;width:100%;position:relative">
+          <input type="text" id="cafe-menu-search" class="form-control"
+            placeholder="🔍 Tìm nhanh tên món gọi..."
+            value="${this._cafeSearchQuery || ''}"
+            oninput="App._filterCafeMenuSearch(this.value)"
+            style="padding-left:34px;font-size:13px">
+          <i data-lucide="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text-muted)"></i>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${cats.map(c => `
+            <button class="food-cat-tab ${c === this._currentCafeCat ? 'active' : ''}"
+              data-cat="${c}" onclick="App._filterCafeMenu('${c}')">${c}</button>`).join('')}
+        </div>`;
+      lucide.createIcons({ nodes: [catFilters] });
     }
 
-    this._renderCafeMenuGrid('Tất cả');
+    this._renderCafeMenuGrid(this._currentCafeCat);
     this._renderCafeCart();
   },
 
+  _filterCafeMenuSearch(query) {
+    this._cafeSearchQuery = query || '';
+    this._renderCafeMenuGrid(this._currentCafeCat);
+  },
+
   _renderCafeMenuGrid(cat) {
+    this._currentCafeCat = cat;
     const menu     = Store.getMenu();
-    const filtered = cat === 'Tất cả' ? menu : menu.filter(m => m.category === cat);
+    let filtered = cat === 'Tất cả' ? menu : menu.filter(m => m.category === cat);
+    if (this._cafeSearchQuery) {
+      const q = this._cafeSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter(m => (m.name || '').toLowerCase().includes(q) || (m.category || '').toLowerCase().includes(q));
+    }
     const grid     = document.getElementById('cafe-menu-grid');
     if (!grid) return;
     if (!filtered.length) {
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package',32)}<p>Không có món</p></div>`;
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package',32)}<p>Không tìm thấy món nào</p></div>`;
       lucide.createIcons({ nodes: [grid] });
       return;
     }
@@ -1504,6 +1574,7 @@ const App = {
   },
 
   _filterCafeMenu(cat) {
+    this._currentCafeCat = cat;
     document.querySelectorAll('#cafe-cat-filters .food-cat-tab').forEach(btn =>
       btn.classList.toggle('active', btn.dataset.cat === cat));
     this._renderCafeMenuGrid(cat);
@@ -1673,12 +1744,12 @@ const App = {
 
     if (memberId) {
       Store.addMemberPoints(memberId, 1, total);
-      if (memberName) Toast.show(`+1 điểm cho ${memberName} ☕`, 'info', 2500);
+      if (memberName) Toast.show(`+1 điểm tích lũy cho ${memberName}`, 'info', 2500);
     }
 
     this._cafeCart = [];
     Modal.close();
-    Toast.show(`Thanh toán ${formatMoney(total)} thành công! ☕`, 'success');
+    Toast.show(`Thanh toán ${formatMoney(total)} thành công!`, 'success');
     this._renderCafeCart();
     if (shouldPrint) setTimeout(() => this._printCafeInvoice(invoice), 400);
   },
@@ -1688,7 +1759,7 @@ const App = {
     const printArea = document.getElementById('print-area');
     printArea.innerHTML = `
       <div class="invoice-header">
-        <div class="invoice-logo">☕</div>
+        <div class="invoice-logo">${ic('coffee', 32)}</div>
         <div class="invoice-shop-name">${settings.shopName}</div>
         <div class="invoice-shop-info">${settings.shopAddress}</div>
         <div class="invoice-shop-info">Hotline: ${settings.shopPhone}</div>
@@ -1699,7 +1770,7 @@ const App = {
 
       ${invoice.memberName ? `
         <div class="invoice-member-info">
-          <div style="font-weight:800">👤 KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
+          <div style="font-weight:800">${ic('user', 14)} KHÁCH HÀNG: ${invoice.memberName.toUpperCase()} ${invoice.memberRank ? `(${invoice.memberRank})` : ''}</div>
           <div>PTTT: <strong>${invoice.paymentMethod === 'member_balance' ? 'Trừ số dư tài khoản' : 'Tiền mặt / Chuyển khoản'}</strong></div>
           ${invoice.paymentMethod === 'member_balance' ? `
             <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
@@ -1712,7 +1783,7 @@ const App = {
       <div class="invoice-section-title">ĐỒ UỐNG & ĐỒ ĂN</div>
       ${invoice.foodItems.map(item => `
         <div class="invoice-item">
-          <span class="item-name">${item.emoji} ${item.name}</span>
+          <span class="item-name">${ic('utensils', 12)} ${item.name}</span>
           <span class="item-detail">× ${item.quantity}</span>
           <span class="item-price">${formatMoney(item.price * item.quantity)}</span>
         </div>`).join('')}
@@ -1726,6 +1797,8 @@ const App = {
         <div class="invoice-thank-you">${settings.footerNote}</div>
         <div>In lúc: ${formatDateTime(Date.now())}</div>
       </div>`;
+
+    lucide.createIcons({ nodes: [printArea] });
     window.print();
   },
 
@@ -1814,11 +1887,11 @@ const App = {
           <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="radio" name="pay_method_${discountInputId}" value="cash" checked onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
-              💵 Tiền mặt / CK
+              ${ic('banknote', 14)} Tiền mặt / CK
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="radio" name="pay_method_${discountInputId}" value="member_balance" onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
-              💳 Trừ tài khoản TV
+              ${ic('credit-card', 14)} Trừ tài khoản TV
             </label>
           </div>
           <div id="payment-method-notice"></div>
@@ -1850,7 +1923,7 @@ const App = {
             <span style="font-weight:700;color:#166534">${member.name}</span>
             <span style="margin-left:6px;color:${rank.color};font-weight:600">${rank.labelHtml} (${rank.discount > 0 ? 'Giảm ' + rank.discount + '%' : 'Không giảm'})</span>
           </div>
-          <span style="font-weight:800;color:#15803d">💳 Số dư: ${formatMoney(member.balance || 0)}</span>
+          <span style="font-weight:800;color:#15803d">${ic('credit-card', 14)} Số dư: ${formatMoney(member.balance || 0)}</span>
         </div>`;
       lucide.createIcons({ nodes: [chipEl] });
     }
@@ -1884,8 +1957,9 @@ const App = {
         if (noticeEl) {
           noticeEl.innerHTML = `
             <div style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600">
-              ✅ Số dư đủ thanh toán. Số dư còn lại sau bill: <strong>${formatMoney(remaining)}</strong>
+              ${ic('check-circle', 14)} Số dư đủ thanh toán. Số dư còn lại sau bill: <strong>${formatMoney(remaining)}</strong>
             </div>`;
+          lucide.createIcons({ nodes: [noticeEl] });
         }
         confirmBtns.forEach(btn => btn.disabled = false);
       } else {
@@ -1893,7 +1967,7 @@ const App = {
         if (noticeEl) {
           noticeEl.innerHTML = `
             <div style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:8px 10px;border-radius:6px;font-size:12px">
-              ⚠️ <strong>Số dư không đủ!</strong> (Thiếu <strong>${formatMoney(need)}</strong>).<br>
+              ${ic('alert-triangle', 14)} <strong>Số dư không đủ!</strong> (Thiếu <strong>${formatMoney(need)}</strong>).<br>
               Vui lòng nộp thêm tiền hoặc chọn thanh toán Tiền mặt.
               <div style="margin-top:6px">
                 <button class="btn btn-xs btn-success" type="button" style="padding:3px 8px;font-size:11px" onclick="App.depositMemberModal('${member.id}')">
@@ -1986,7 +2060,7 @@ const App = {
             <div class="member-phone">${ic('phone',13)} ${member.phone || 'Chưa có SĐT'}</div>
             <div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               <span style="display:inline-flex;align-items:center;gap:4px;background:${(member.balance || 0) > 0 ? '#ecfdf5' : '#f3f4f6'};color:${(member.balance || 0) > 0 ? '#047857' : '#6b7280'};border:1px solid ${(member.balance || 0) > 0 ? '#a7f3d0' : '#e5e7eb'};font-weight:700;padding:2px 8px;border-radius:12px;font-size:12px">
-                💳 ${formatMoney(member.balance || 0)}
+                ${ic('credit-card', 12)} ${formatMoney(member.balance || 0)}
               </span>
               <button class="btn btn-success btn-sm" style="padding:2px 8px;font-size:11px;border-radius:8px" onclick="App.depositMemberModal('${member.id}')" title="Nộp tiền vào tài khoản">
                 ${ic('plus-circle', 12)} Nộp tiền
@@ -2117,23 +2191,24 @@ const App = {
 
     box.innerHTML = `
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
-        <span style="color:#374151">💰 Tiền nộp thực tế:</span>
+        <span style="color:#374151">${ic('coins', 14)} Tiền nộp thực tế:</span>
         <span style="font-weight:700;color:#111827">${formatMoney(amount)}</span>
       </div>
       ${bonusPct > 0 ? `
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;color:#16a34a">
-        <span>🎁 Khuyến mãi (+${bonusPct}%):</span>
+        <span>${ic('gift', 14)} Khuyến mãi (+${bonusPct}%):</span>
         <span style="font-weight:700">+${formatMoney(bonusAmount)}</span>
       </div>` : ''}
       <div style="border-top:1px dashed #bbf7d0;margin:6px 0;padding-top:6px;display:flex;justify-content:space-between;font-size:14px">
-        <span style="font-weight:700;color:#15803d">✅ Tổng cộng vào số dư:</span>
+        <span style="font-weight:700;color:#15803d">${ic('check-circle', 14)} Tổng cộng vào số dư:</span>
         <span style="font-weight:800;color:#15803d">${formatMoney(credit)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px">
-        <span style="color:#4b5563">💳 Số dư sau khi nộp:</span>
+        <span style="color:#4b5563">${ic('credit-card', 14)} Số dư sau khi nộp:</span>
         <span style="font-weight:800;color:#047857">${formatMoney(newBalance)}</span>
       </div>
     `;
+    lucide.createIcons({ nodes: [box] });
   },
 
   _doDepositMember(id) {
@@ -2145,7 +2220,7 @@ const App = {
     try {
       const res = Store.depositMemberBalance(id, amount);
       Modal.close();
-      Toast.show(`Đã nộp ${formatMoney(amount)} → +${formatMoney(res.record.credit)} vào tài khoản ${res.member.name}! 🎉`, 'success');
+      Toast.show(`Đã nộp ${formatMoney(amount)} → +${formatMoney(res.record.credit)} vào tài khoản ${res.member.name}!`, 'success');
       this.renderMembersPage();
     } catch (err) {
       Toast.show(err.message || 'Lỗi khi nộp tiền', 'error');
@@ -2187,7 +2262,7 @@ const App = {
     if (!name) { Toast.show('Vui lòng nhập tên thành viên!', 'error'); return; }
     Store.addMember({ name, phone, note });
     Modal.close();
-    Toast.show(`Đã thêm thành viên ${name}! 🎉`, 'success');
+    Toast.show(`Đã thêm thành viên ${name}!`, 'success');
     this.renderMembersPage();
   },
 
@@ -2245,7 +2320,7 @@ const App = {
             ${historyItems.length > 0 ? historyItems.map(item => item.type === 'deposit' ? `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #e2e8f0">
                 <div>
-                  <span style="color:#16a34a;font-weight:700">🟢 Nộp tiền</span>
+                  <span style="color:#16a34a;font-weight:700;display:inline-flex;align-items:center;gap:4px">${ic('arrow-down-left', 14)} Nộp tiền</span>
                   <span style="color:var(--text-muted);font-size:11px;margin-left:6px">${formatDateShort(item.date)}</span>
                 </div>
                 <span style="color:#16a34a;font-weight:700">+${formatMoney(item.credit)} <small style="color:var(--text-muted);font-weight:400">(gốc ${formatMoney(item.amount)} + ${item.bonusPct}%)</small></span>
@@ -2253,7 +2328,7 @@ const App = {
             ` : `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #e2e8f0">
                 <div>
-                  <span style="color:#dc2626;font-weight:700">🔴 Thanh toán bill</span>
+                  <span style="color:#dc2626;font-weight:700;display:inline-flex;align-items:center;gap:4px">${ic('arrow-up-right', 14)} Thanh toán bill</span>
                   <span style="color:var(--text-muted);font-size:11px;margin-left:6px">${formatDateShort(item.date)}</span>
                 </div>
                 <span style="color:#dc2626;font-weight:700">-${formatMoney(item.amount)}</span>
