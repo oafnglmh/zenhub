@@ -42,6 +42,19 @@ const Store = (() => {
     { id: 'table_4', name: 'Bàn 4', type: 'standard', pricePerHour: 50000 },
   ];
 
+  // Giá được tính theo thời điểm thực tế khách chơi. Mỗi khung bao gồm cả phút kết thúc.
+  const TIME_RATES = {
+    libre: [
+      { label: '06:00–12:00', startMinute: 360, endMinute: 720, rate: 29000 },
+      { label: '12:01–21:00', startMinute: 721, endMinute: 1260, rate: 34000 },
+      { label: '21:01–05:59', startMinute: 1261, endMinute: 359, rate: 39000 },
+    ],
+    pocket: [
+      { label: '06:00–12:00', startMinute: 360, endMinute: 720, rate: 29000 },
+      { label: '12:01–21:00', startMinute: 721, endMinute: 1260, rate: 39000 },
+      { label: '21:01–05:59', startMinute: 1261, endMinute: 359, rate: 44000 },
+    ],
+  };
   const DEFAULT_MEMBERS = [];
 
   const DEFAULT_SETTINGS = {
@@ -113,13 +126,15 @@ const Store = (() => {
   const getSession = (tableId) => getSessions()[tableId] || null;
 
   const startSession = (tableId) => {
+    const now = Date.now();
     const sessions = getSessions();
     sessions[tableId] = {
       tableId,
-      startTime: Date.now(),
+      startTime: now,
       pausedDuration: 0,
       isPaused: false,
       pauseStart: null,
+      activeSegments: [{ start: now, end: null }],
       items: [],
     };
     _setSessions(sessions);
@@ -131,6 +146,9 @@ const Store = (() => {
     if (sessions[tableId] && !sessions[tableId].isPaused) {
       sessions[tableId].isPaused = true;
       sessions[tableId].pauseStart = Date.now();
+      const segments = sessions[tableId].activeSegments || [{ start: sessions[tableId].startTime, end: null }];
+      if (segments.length) segments[segments.length - 1].end = sessions[tableId].pauseStart;
+      sessions[tableId].activeSegments = segments;
       _setSessions(sessions);
     }
   };
@@ -141,6 +159,8 @@ const Store = (() => {
       sessions[tableId].pausedDuration += Date.now() - sessions[tableId].pauseStart;
       sessions[tableId].isPaused = false;
       sessions[tableId].pauseStart = null;
+      if (!sessions[tableId].activeSegments) sessions[tableId].activeSegments = [];
+      sessions[tableId].activeSegments.push({ start: Date.now(), end: null });
       _setSessions(sessions);
     }
   };
@@ -249,7 +269,7 @@ const Store = (() => {
   /**
    * Nộp tiền vào tài khoản thành viên - tính % khuyến mãi từ Settings
    */
-  const depositMemberBalance = (id, amount) => {
+  const depositMemberBalance = (id, amount, bonusPctOverride = null) => {
     const members = getMembers();
     const idx = members.findIndex(m => m.id === id);
     if (idx === -1) throw new Error('Không tìm thấy thành viên');
@@ -257,7 +277,10 @@ const Store = (() => {
     const numAmount = Number(amount) || 0;
     if (numAmount <= 0) throw new Error('Số tiền nộp phải lớn hơn 0');
 
-    const bonusPct = getDepositBonusPct();
+    const defaultBonusPct = getDepositBonusPct();
+    const bonusPct = bonusPctOverride === null || bonusPctOverride === ''
+      ? defaultBonusPct
+      : Math.max(0, Math.min(100, Math.round(Number(bonusPctOverride) || 0)));
     const bonusAmount = Math.round(numAmount * bonusPct / 100);
     const credit = numAmount + bonusAmount;
 
@@ -291,10 +314,7 @@ const Store = (() => {
     const member = members[idx];
     const currentBalance = member.balance || 0;
 
-    if (currentBalance < numAmount) {
-      throw new Error(`Số dư không đủ! Cần ${numAmount.toLocaleString('vi-VN')}đ, hiện có ${currentBalance.toLocaleString('vi-VN')}đ`);
-    }
-
+    // Cho phép số dư âm khi thanh toán (ghi nợ thành viên)
     const record = {
       id: `pay_${Date.now()}`,
       date: Date.now(),
@@ -362,12 +382,53 @@ const Store = (() => {
     return Math.max(0, Math.floor(elapsed / 1000));
   };
 
-  /**
-   * Calculates table bill (time × price).
-   */
-  const calcTableBill = (session, pricePerHour) => {
-    const secs = getElapsedSeconds(session);
-    return Math.round((secs / 3600) * pricePerHour);
+  const normalizeTableType = (type) => type === 'pocket' || type === 'lo' ? 'pocket' : 'libre';
+
+  const getTimeRate = (tableType, timestamp) => {
+    const date = new Date(timestamp);
+    const minute = date.getHours() * 60 + date.getMinutes();
+    const rates = TIME_RATES[normalizeTableType(tableType)];
+    return rates.find(({ startMinute, endMinute }) =>
+      startMinute <= endMinute
+        ? minute >= startMinute && minute <= endMinute
+        : minute >= startMinute || minute <= endMinute,
+    );
+  };
+
+  const getRateSchedule = (tableType) => TIME_RATES[normalizeTableType(tableType)];
+
+  const calcSegmentBill = (start, end, tableType) => {
+    let cursor = start;
+    let total = 0;
+    while (cursor < end) {
+      const current = new Date(cursor);
+      const nextMinute = new Date(current);
+      nextMinute.setSeconds(0, 0);
+      nextMinute.setMinutes(nextMinute.getMinutes() + 1);
+      const sliceEnd = Math.min(end, nextMinute.getTime());
+      if (sliceEnd <= cursor) {
+        cursor = end;
+        break;
+      }
+      const rateObj = getTimeRate(tableType, cursor);
+      const rate = rateObj ? rateObj.rate : 30000;
+      total += ((sliceEnd - cursor) / 3600000) * rate;
+      cursor = sliceEnd;
+    }
+    return total;
+  };
+
+  /** Calculates the bill across each active time band; paused time is excluded. */
+  const calcTableBill = (session, tableType) => {
+    if (!session) return 0;
+    const now = session.isPaused ? session.pauseStart : Date.now();
+    if (!session.activeSegments || session.activeSegments.length === 0) {
+      const rateObj = getTimeRate(tableType, now);
+      const rate = rateObj ? rateObj.rate : 30000;
+      return Math.round((getElapsedSeconds(session) / 3600) * rate);
+    }
+    return Math.round(session.activeSegments.reduce((total, segment) =>
+      total + calcSegmentBill(segment.start, segment.end || now, tableType), 0));
   };
 
   /**
@@ -397,7 +458,7 @@ const Store = (() => {
     getDepositBonusPct, setDepositBonusPct,
     getSettings, setSettings,
     getRankSettings, setRankSettings,
-    getElapsedSeconds, calcTableBill, calcFoodBill,
+    getElapsedSeconds, calcTableBill, calcFoodBill, getTimeRate, getRateSchedule, normalizeTableType,
   };
 })();
 

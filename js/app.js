@@ -113,7 +113,9 @@ const App = {
     Modal.init();
     this._setupNav();
     this.updateNavBadges();
-    this.navigate('dashboard');
+    this._bindSearchOutsideClick();
+    const savedPage = sessionStorage.getItem('thiencafe_page') || 'dashboard';
+    this.navigate(savedPage);
     this._startTimers();
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') Modal.close(); });
   },
@@ -160,6 +162,7 @@ const App = {
 
   navigate(page) {
     this.currentPage = page;
+    try { sessionStorage.setItem('thiencafe_page', page); } catch { }
     this.closeMobileSidebar();
 
     document.querySelectorAll('.nav-item[data-page]').forEach(el =>
@@ -169,13 +172,13 @@ const App = {
       el.classList.toggle('active', el.id === `page-${page}`));
 
     const renderers = {
-      dashboard:  () => this.renderDashboard(),
-      tables:     () => this.renderTables(),
-      revenue:    () => this.renderRevenue(),
-      menu:       () => this.renderMenuPage(),
-      cafebill:   () => this.renderCafeBill(),
-      members:    () => this.renderMembersPage(),
-      settings:   () => this.renderSettings(),
+      dashboard: () => this.renderDashboard(),
+      tables: () => this.renderTables(),
+      revenue: () => this.renderRevenue(),
+      menu: () => this.renderMenuPage(),
+      cafebill: () => this.renderCafeBill(),
+      members: () => this.renderMembersPage(),
+      settings: () => this.renderSettings(),
     };
     if (renderers[page]) renderers[page]();
   },
@@ -183,54 +186,57 @@ const App = {
   // ────────────────────────────── TIMERS ──────────────────────────────
 
   _startTimers() {
+    if (this._timerInterval) clearInterval(this._timerInterval);
     this._timerInterval = setInterval(() => this._tick(), 1000);
   },
 
   _tick() {
     const sessions = Store.getSessions();
-    const tables   = Store.getTables();
+    const tables = Store.getTables();
 
     Object.entries(sessions).forEach(([tableId, session]) => {
       if (session.isPaused) return;
       const table = tables.find(t => t.id === tableId);
       if (!table) return;
 
-      const elapsed   = Store.getElapsedSeconds(session);
-      const tableBill = Store.calcTableBill(session, table.pricePerHour);
-      const foodBill  = Store.calcFoodBill(session.items);
-      const total     = tableBill + foodBill;
+      const elapsed = Store.getElapsedSeconds(session);
+      const tableBill = Store.calcTableBill(session, table.type);
+      const foodBill = Store.calcFoodBill(session.items);
+      const total = tableBill + foodBill;
 
-      const timerEl = document.querySelector(`[data-timer="${tableId}"]`);
-      const billEl  = document.querySelector(`[data-bill="${tableId}"]`);
-      if (timerEl) timerEl.textContent = formatTime(elapsed);
-      if (billEl)  billEl.textContent  = formatMoney(total);
+      document.querySelectorAll(`[data-timer="${tableId}"]`).forEach(el => {
+        el.textContent = formatTime(elapsed);
+      });
+      document.querySelectorAll(`[data-bill="${tableId}"]`).forEach(el => {
+        el.textContent = formatMoney(total);
+      });
+      document.querySelectorAll(`[data-table-bill="${tableId}"]`).forEach(el => {
+        el.textContent = formatMoney(tableBill);
+      });
     });
 
     // Live checkout update
     if (this.checkoutTableId) {
       const session = Store.getSession(this.checkoutTableId);
-      const table   = Store.getTable(this.checkoutTableId);
+      const table = Store.getTable(this.checkoutTableId);
       if (session && table) {
-        const elapsed   = Store.getElapsedSeconds(session);
-        const tableBill = Store.calcTableBill(session, table.pricePerHour);
-        const foodBill  = Store.calcFoodBill(session.items);
-        const pct       = parseFloat(document.getElementById('discount-pct')?.value) || 0;
-        const subtotal  = tableBill + foodBill;
-        const discount  = Math.round(subtotal * pct / 100);
-        const total     = subtotal - discount;
+        const elapsed = Store.getElapsedSeconds(session);
+        const tableBill = Store.calcTableBill(session, table.type);
+        const foodBill = Store.calcFoodBill(session.items);
+        const pct = parseFloat(document.getElementById('discount-pct')?.value) || 0;
+        const subtotal = tableBill + foodBill;
+        const discount = Math.round(subtotal * pct / 100);
+        const total = subtotal - discount;
 
-        const timeEl  = document.getElementById('checkout-time');
+        const timeEl = document.getElementById('checkout-time');
         const totalEl = document.getElementById('checkout-total');
-        const tblEl   = document.getElementById('checkout-table-bill');
+        const tblEl = document.getElementById('checkout-table-bill');
 
-        if (timeEl)  timeEl.textContent  = formatTime(elapsed);
-        if (tblEl)   tblEl.textContent   = formatMoney(tableBill);
+        if (timeEl) timeEl.textContent = formatTime(elapsed);
+        if (tblEl) tblEl.textContent = formatMoney(tableBill);
         if (totalEl) totalEl.textContent = formatMoney(total);
       }
     }
-
-    // Dashboard live active list
-    if (this.currentPage === 'dashboard') this._updateDashboardActive();
   },
 
   // ────────────────────────────── DASHBOARD ──────────────────────────────
@@ -238,21 +244,21 @@ const App = {
   renderDashboard() {
     const invoices = Store.getInvoices();
     const sessions = Store.getSessions();
-    const tables   = Store.getTables();
-    const now      = new Date();
+    const tables = Store.getTables();
+    const now = new Date();
 
-    const dayStart   = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
     const todayInvoices = invoices.filter(i => i.createdAt >= dayStart);
-    const todayRevenue  = todayInvoices.reduce((s, i) => s + i.total, 0);
-    const monthRevenue  = invoices.filter(i => i.createdAt >= monthStart).reduce((s, i) => s + i.total, 0);
-    const activeTables  = Object.keys(sessions).length;
+    const todayRevenue = todayInvoices.reduce((s, i) => s + i.total, 0);
+    const monthRevenue = invoices.filter(i => i.createdAt >= monthStart).reduce((s, i) => s + i.total, 0);
+    const activeTables = Object.keys(sessions).length;
 
     const s = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    s('stat-today',    formatMoney(todayRevenue));
-    s('stat-month',    formatMoney(monthRevenue));
-    s('stat-active',   `${activeTables}/${tables.length}`);
+    s('stat-today', formatMoney(todayRevenue));
+    s('stat-month', formatMoney(monthRevenue));
+    s('stat-active', `${activeTables}/${tables.length}`);
     s('stat-invoices', todayInvoices.length);
 
     this._updateDashboardActive();
@@ -263,8 +269,8 @@ const App = {
     const container = document.getElementById('active-tables-list');
     if (!container) return;
     const sessions = Store.getSessions();
-    const tables   = Store.getTables();
-    const entries  = Object.entries(sessions);
+    const tables = Store.getTables();
+    const entries = Object.entries(sessions);
 
     if (entries.length === 0) {
       container.innerHTML = `
@@ -280,9 +286,9 @@ const App = {
       const table = tables.find(t => t.id === tableId);
       if (!table) return '';
       const elapsed = Store.getElapsedSeconds(session);
-      const bill    = Store.calcTableBill(session, table.pricePerHour) + Store.calcFoodBill(session.items);
-      const paused  = session.isPaused;
-      const match   = table.name.match(/\d+/);
+      const bill = Store.calcTableBill(session, table.type) + Store.calcFoodBill(session.items);
+      const paused = session.isPaused;
+      const match = table.name.match(/\d+/);
       const ballNum = match ? (parseInt(match[0], 10) - 1) % 15 + 1 : 8;
       return `
         <div class="active-table-item">
@@ -312,7 +318,7 @@ const App = {
     const invoices = Store.getInvoices();
     const labels = [], data = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
+      const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
       const nd = new Date(d); nd.setDate(d.getDate() + 1);
       labels.push(formatDateShort(d.getTime()));
       data.push(invoices.filter(inv => inv.createdAt >= d.getTime() && inv.createdAt < nd.getTime())
@@ -362,7 +368,7 @@ const App = {
             ticks: {
               color: '#64748b',
               font: { family: 'Inter', weight: '600', size: 11 },
-              callback: (v) => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3)+'k' : v,
+              callback: (v) => v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3) + 'k' : v,
             },
           },
         },
@@ -374,9 +380,9 @@ const App = {
 
   renderTables() {
     this.updateNavBadges();
-    const tables   = Store.getTables();
+    const tables = Store.getTables();
     const sessions = Store.getSessions();
-    const grid     = document.getElementById('tables-grid');
+    const grid = document.getElementById('tables-grid');
     if (!grid) return;
 
     if (tables.length === 0) {
@@ -396,17 +402,17 @@ const App = {
   _tableCardHTML(table, session) {
     const isActive = !!session && !session.isPaused;
     const isPaused = !!session && session.isPaused;
-    const isIdle   = !session;
-    const status   = isActive ? 'active' : isPaused ? 'paused' : 'idle';
+    const isIdle = !session;
+    const status = isActive ? 'active' : isPaused ? 'paused' : 'idle';
 
-    const elapsed   = session ? Store.getElapsedSeconds(session) : 0;
-    const tableBill = session ? Store.calcTableBill(session, table.pricePerHour) : 0;
-    const foodBill  = session ? Store.calcFoodBill(session.items) : 0;
-    const total     = tableBill + foodBill;
-    const foodCnt   = session ? session.items.reduce((s, i) => s + i.quantity, 0) : 0;
+    const elapsed = session ? Store.getElapsedSeconds(session) : 0;
+    const tableBill = session ? Store.calcTableBill(session, table.type) : 0;
+    const foodBill = session ? Store.calcFoodBill(session.items) : 0;
+    const total = tableBill + foodBill;
+    const foodCnt = session ? session.items.reduce((s, i) => s + i.quantity, 0) : 0;
 
     const statusLabel = { active: 'Đang chơi', paused: 'Tạm dừng', idle: 'Trống' }[status];
-    const statusIcon  = { active: 'play', paused: 'pause', idle: 'circle' }[status];
+    const statusIcon = { active: 'play', paused: 'pause', idle: 'circle' }[status];
 
     // Extract table number for 3D pool ball styling
     const tableNumMatch = table.name.match(/\d+/);
@@ -448,7 +454,7 @@ const App = {
               </div>
             </div>
             <div class="table-meta">
-              <div class="table-rate">${ic('clock', 12)} ${formatMoney(table.pricePerHour)}/h</div>
+              <div class="table-rate">${ic('clock', 12)} ${Store.normalizeTableType(table.type) === 'pocket' ? 'Bida lỗ' : 'Bida líp'} · giá tự động</div>
               ${foodCnt > 0 ? `<div class="food-badge">${ic('utensils', 12)} ${foodCnt} món</div>` : ''}
             </div>
           </div>
@@ -460,16 +466,16 @@ const App = {
             </div>
 
             ${isIdle
-              ? `<div class="table-bill idle"><span class="cue-ball-dot"></span> Bàn trống — Sẵn sàng mở bàn</div>`
-              : `<div class="scoreboard-bill-box">
+        ? `<div class="table-bill idle"><span class="cue-ball-dot"></span> Bàn trống — Sẵn sàng mở bàn</div>`
+        : `<div class="scoreboard-bill-box">
                    <div class="bill-title">TỔNG CẦN THANH TOÁN</div>
                    <div class="table-bill" data-bill="${table.id}">${formatMoney(total)}</div>
                    <div class="table-bill-breakdown">
-                     <span>${ic('circle-dot', 11)} Bida: <strong>${formatMoney(tableBill)}</strong></span>
+                     <span>${ic('circle-dot', 11)} Bida: <strong data-table-bill="${table.id}">${formatMoney(tableBill)}</strong></span>
                      <span>${ic('utensils', 11)} Dịch vụ: <strong>${formatMoney(foodBill)}</strong></span>
                    </div>
                  </div>`
-            }
+      }
           </div>
         </div>
 
@@ -522,31 +528,12 @@ const App = {
 
   openTableModal(tableId) {
     const table = Store.getTable(tableId);
-    const def   = Store.getSettings().defaultPricePerHour;
-    Modal.show(`
-      <div class="modal">
-        <div class="modal-header">
-          <div class="modal-title">${ic('play', 20)} Mở bàn — ${table.name}</div>
-          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Giá tiền / giờ (VNĐ)</label>
-          <input type="number" id="modal-open-price" class="form-control"
-            value="${table.pricePerHour}" min="0" step="5000">
-          <div class="form-hint">Mặc định: ${formatMoney(def)}/giờ — có thể thay đổi mỗi lần mở</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
-          <button class="btn btn-success btn-lg" onclick="App.confirmOpenTable('${tableId}')">
-            ${ic('play')} Bắt đầu chơi
-          </button>
-        </div>
-      </div>`);
+    const typeLabel = Store.normalizeTableType(table.type) === 'pocket' ? 'Bida lỗ' : 'Bida líp';
+    const schedule = Store.getRateSchedule(table.type);
+    Modal.show(`<div class="modal"><div class="modal-header"><div class="modal-title">${ic('play', 20)} Mở bàn — ${table.name}</div><button class="modal-close" onclick="Modal.close()">${ic('x')}</button></div><div class="form-group"><label class="form-label">${typeLabel} — bảng giá tự động</label>${schedule.map(rate => `<div class="checkout-row"><span>${rate.label}</span><span class="value">${formatMoney(rate.rate)}/giờ</span></div>`).join('')}<div class="form-hint" style="margin-top:10px">Tiền bàn tính theo thời gian thực; khi qua khung giờ, hệ thống tự đổi giá.</div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button><button class="btn btn-success btn-lg" onclick="App.confirmOpenTable('${tableId}')">${ic('play')} Bắt đầu chơi</button></div></div>`);
   },
 
   confirmOpenTable(tableId) {
-    const price = parseInt(document.getElementById('modal-open-price')?.value) || Store.getSettings().defaultPricePerHour;
-    Store.updateTable(tableId, { pricePerHour: price });
     Store.startSession(tableId);
     Modal.close();
     Toast.show('Đã mở bàn! Chúc vui vẻ 🎱', 'success');
@@ -567,92 +554,28 @@ const App = {
 
   editTableModal(tableId) {
     const t = Store.getTable(tableId);
-    Modal.show(`
-      <div class="modal">
-        <div class="modal-header">
-          <div class="modal-title">${ic('pencil', 20)} Chỉnh sửa bàn</div>
-          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tên bàn</label>
-          <input type="text" id="et-name" class="form-control" value="${t.name}">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Loại bàn</label>
-            <select id="et-type" class="form-control">
-              <option value="standard" ${t.type === 'standard' ? 'selected' : ''}>Bàn thường</option>
-              <option value="vip"      ${t.type === 'vip'      ? 'selected' : ''}>Bàn VIP</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Giá mặc định / giờ</label>
-            <input type="number" id="et-price" class="form-control" value="${t.pricePerHour}" min="0" step="5000">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
-          <button class="btn btn-primary" onclick="App.saveTableEdit('${tableId}')">
-            ${ic('save')} Lưu thay đổi
-          </button>
-        </div>
-      </div>`);
+    const tableType = Store.normalizeTableType(t.type);
+    Modal.show(`<div class="modal"><div class="modal-header"><div class="modal-title">${ic('pencil', 20)} Chỉnh sửa bàn</div><button class="modal-close" onclick="Modal.close()">${ic('x')}</button></div><div class="form-group"><label class="form-label">Tên bàn</label><input type="text" id="et-name" class="form-control" value="${t.name}"></div><div class="form-group"><label class="form-label">Loại bàn</label><select id="et-type" class="form-control"><option value="libre" ${tableType === 'libre' ? 'selected' : ''}>Bida líp</option><option value="pocket" ${tableType === 'pocket' ? 'selected' : ''}>Bida lỗ</option></select><div class="form-hint">Giá tự động theo loại bàn và khung giờ.</div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button><button class="btn btn-primary" onclick="App.saveTableEdit('${tableId}')">${ic('save')} Lưu thay đổi</button></div></div>`);
   },
 
   saveTableEdit(tableId) {
-    const name  = document.getElementById('et-name').value.trim();
-    const type  = document.getElementById('et-type').value;
-    const price = parseInt(document.getElementById('et-price').value) || 50000;
+    const name = document.getElementById('et-name').value.trim();
+    const type = document.getElementById('et-type').value;
     if (!name) { Toast.show('Vui lòng nhập tên bàn!', 'error'); return; }
-    Store.updateTable(tableId, { name, type, pricePerHour: price });
-    Modal.close();
-    Toast.show('Đã cập nhật bàn!', 'success');
-    this.renderTables();
+    Store.updateTable(tableId, { name, type });
+    Modal.close(); Toast.show('Đã cập nhật bàn!', 'success'); this.renderTables();
   },
 
   addTableModal() {
-    const def = Store.getSettings().defaultPricePerHour;
-    Modal.show(`
-      <div class="modal">
-        <div class="modal-header">
-          <div class="modal-title">${ic('plus', 20)} Thêm bàn mới</div>
-          <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tên bàn</label>
-          <input type="text" id="nt-name" class="form-control" placeholder="Bàn 5, Bàn VIP 1…">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Loại bàn</label>
-            <select id="nt-type" class="form-control">
-              <option value="standard">Bàn thường</option>
-              <option value="vip">Bàn VIP</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Giá / giờ (VNĐ)</label>
-            <input type="number" id="nt-price" class="form-control" value="${def}" min="0" step="5000">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button>
-          <button class="btn btn-primary" onclick="App.saveNewTable()">
-            ${ic('plus')} Thêm bàn
-          </button>
-        </div>
-      </div>`);
+    Modal.show(`<div class="modal"><div class="modal-header"><div class="modal-title">${ic('plus', 20)} Thêm bàn mới</div><button class="modal-close" onclick="Modal.close()">${ic('x')}</button></div><div class="form-group"><label class="form-label">Tên bàn</label><input type="text" id="nt-name" class="form-control" placeholder="Bàn 5, Bàn lỗ 1…"></div><div class="form-group"><label class="form-label">Loại bàn</label><select id="nt-type" class="form-control"><option value="libre">Bida líp</option><option value="pocket">Bida lỗ</option></select><div class="form-hint">Giá tự động theo loại bàn và khung giờ thực tế.</div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="Modal.close()">${ic('x')} Hủy</button><button class="btn btn-primary" onclick="App.saveNewTable()">${ic('plus')} Thêm bàn</button></div></div>`);
   },
 
   saveNewTable() {
-    const name  = document.getElementById('nt-name').value.trim();
-    const type  = document.getElementById('nt-type').value;
-    const price = parseInt(document.getElementById('nt-price').value) || 50000;
+    const name = document.getElementById('nt-name').value.trim();
+    const type = document.getElementById('nt-type').value;
     if (!name) { Toast.show('Vui lòng nhập tên bàn!', 'error'); return; }
-    Store.addTable({ name, type, pricePerHour: price });
-    Modal.close();
-    Toast.show(`Đã thêm ${name}!`, 'success');
-    this.renderTables();
+    Store.addTable({ name, type });
+    Modal.close(); Toast.show(`Đã thêm ${name}!`, 'success'); this.renderTables();
   },
 
   deleteTable(tableId) {
@@ -693,18 +616,18 @@ const App = {
   currentFoodSearch: '',
 
   openFoodModal(tableId) {
-    this.currentFoodTableId  = tableId;
+    this.currentFoodTableId = tableId;
     this.currentFoodCategory = 'Tất cả';
-    this.currentFoodSearch   = '';
+    this.currentFoodSearch = '';
     this._drawFoodModal();
   },
 
   _drawFoodModal() {
-    const tableId  = this.currentFoodTableId;
-    const table    = Store.getTable(tableId);
-    const session  = Store.getSession(tableId);
-    const menu     = Store.getMenu();
-    const cats     = ['Tất cả', ...new Set(menu.map(m => m.category))];
+    const tableId = this.currentFoodTableId;
+    const table = Store.getTable(tableId);
+    const session = Store.getSession(tableId);
+    const menu = Store.getMenu();
+    const cats = ['Tất cả', ...new Set(menu.map(m => m.category))];
     const foodTotal = session ? Store.calcFoodBill(session.items) : 0;
 
     Modal.show(`
@@ -827,14 +750,14 @@ const App = {
   },
 
   addFoodToSession(menuItemId) {
-    const tableId  = this.currentFoodTableId;
+    const tableId = this.currentFoodTableId;
     const menuItem = Store.getMenu().find(m => m.id === menuItemId);
     if (!menuItem || !tableId) return;
     Store.addItemToSession(tableId, {
       menuItemId: menuItem.id,
-      name:       menuItem.name,
-      price:      menuItem.price,
-      emoji:      menuItem.emoji,
+      name: menuItem.name,
+      price: menuItem.price,
+      emoji: menuItem.emoji,
     });
     this._refreshOrderPanel();
     Toast.show(`Đã thêm ${menuItem.name}!`, 'success', 1500);
@@ -853,29 +776,29 @@ const App = {
   _refreshOrderPanel() {
     const tableId = this.currentFoodTableId;
     const session = Store.getSession(tableId);
-    const listEl  = document.getElementById('order-items-list');
+    const listEl = document.getElementById('order-items-list');
     if (!listEl) return;
     listEl.innerHTML = this._orderItemsHTML(session);
     lucide.createIcons({ nodes: [listEl] });
 
     const foodTotal = session ? Store.calcFoodBill(session.items) : 0;
-    const totalEl   = document.getElementById('food-total-display');
+    const totalEl = document.getElementById('food-total-display');
     if (totalEl) totalEl.textContent = formatMoney(foodTotal);
   },
 
   // ────────────────────────────── CHECKOUT ──────────────────────────────
 
   openCheckout(tableId) {
-    const table   = Store.getTable(tableId);
+    const table = Store.getTable(tableId);
     const session = Store.getSession(tableId);
     if (!session) return;
 
     this.checkoutTableId = tableId;
 
-    const elapsed   = Store.getElapsedSeconds(session);
-    const tableBill = Store.calcTableBill(session, table.pricePerHour);
-    const foodBill  = Store.calcFoodBill(session.items);
-    const total     = tableBill + foodBill;
+    const elapsed = Store.getElapsedSeconds(session);
+    const tableBill = Store.calcTableBill(session, table.type);
+    const foodBill = Store.calcFoodBill(session.items);
+    const total = tableBill + foodBill;
 
     Modal.show(`
       <div class="modal">
@@ -892,7 +815,7 @@ const App = {
           </div>
           <div class="checkout-row">
             <span>Đơn giá</span>
-            <span class="value">${formatMoney(table.pricePerHour)}/giờ</span>
+            <span class="value">Tự động theo khung giờ</span>
           </div>
           <div class="checkout-row" style="font-weight:800">
             <span>Tiền bàn bida</span>
@@ -946,34 +869,33 @@ const App = {
   },
 
   _updateCheckoutTotal(tableBill, foodBill) {
-    const pct      = parseFloat(document.getElementById('discount-pct')?.value) || 0;
+    const pct = parseFloat(document.getElementById('discount-pct')?.value) || 0;
     const subtotal = tableBill + foodBill;
     const discount = Math.round(subtotal * pct / 100);
-    const total    = subtotal - discount;
+    const total = subtotal - discount;
 
-    const discEl  = document.getElementById('discount-amount');
+    const discEl = document.getElementById('discount-amount');
     const totalEl = document.getElementById('checkout-total');
-    if (discEl)  discEl.textContent  = `— ${formatMoney(discount)}`;
+    if (discEl) discEl.textContent = `— ${formatMoney(discount)}`;
     if (totalEl) totalEl.textContent = formatMoney(total);
 
     this._onPaymentMethodChange('discount-pct', subtotal);
   },
 
   finalizePayment(tableId, shouldPrint) {
-    const table   = Store.getTable(tableId);
+    const table = Store.getTable(tableId);
     const session = Store.getSession(tableId);
     if (!session) return;
 
-    const elapsed     = Store.getElapsedSeconds(session);
-    const tableBill   = Store.calcTableBill(session, table.pricePerHour);
-    const foodBill    = Store.calcFoodBill(session.items);
+    const elapsed = Store.getElapsedSeconds(session);
+    const tableBill = Store.calcTableBill(session, table.type);
+    const foodBill = Store.calcFoodBill(session.items);
     const discountPct = parseFloat(document.getElementById('discount-pct')?.value) || 0;
-    const subtotal    = tableBill + foodBill;
-    const discount    = Math.round(subtotal * discountPct / 100);
-    const total       = subtotal - discount;
-    const memberId    = document.getElementById('checkout-member-select')?.value || null;
-    const payRadio    = document.querySelector('input[name="pay_method_discount-pct"]:checked');
-    const paymentMethod = (memberId && payRadio) ? payRadio.value : 'cash';
+    const subtotal = tableBill + foodBill;
+    const discount = Math.round(subtotal * discountPct / 100);
+    const total = subtotal - discount;
+    const memberId = document.getElementById('checkout-member-select')?.value || null;
+    const paymentMethod = memberId ? 'member_balance' : 'cash';
 
     let memberBalanceBefore = 0;
     let memberBalanceAfter = 0;
@@ -987,33 +909,28 @@ const App = {
         const rank = this._memberRank(member.points);
         memberRank = rank.label;
 
-        if (paymentMethod === 'member_balance') {
-          memberBalanceBefore = member.balance || 0;
-          if (memberBalanceBefore < total) {
-            Toast.show('Số dư tài khoản thành viên không đủ!', 'error');
-            return;
-          }
-          const res = Store.deductMemberBalance(memberId, total, null, `Thanh toán ${table.name}`);
-          memberBalanceAfter = res.member.balance;
-        }
+        memberBalanceBefore = member.balance || 0;
+        // Trừ ví thành viên, cho phép ghi nợ (số dư âm)
+        const res = Store.deductMemberBalance(memberId, total, null, `Thanh toán ${table.name}`);
+        memberBalanceAfter = res.member.balance;
       }
     }
 
     const invoice = Store.addInvoice({
-      tableName:      table.name,
-      tableId:        table.id,
-      pricePerHour:   table.pricePerHour,
-      startTime:      session.startTime,
-      endTime:        Date.now(),
+      tableName: table.name,
+      tableId: table.id,
+      pricePerHour: table.pricePerHour,
+      startTime: session.startTime,
+      endTime: Date.now(),
       elapsedSeconds: elapsed,
       tableBill,
-      foodItems:      [...session.items],
+      foodItems: [...session.items],
       foodBill,
       discountPct,
       discount,
       subtotal,
       total,
-      memberId:       memberId || null,
+      memberId: memberId || null,
       memberName,
       memberRank,
       paymentMethod,
@@ -1029,7 +946,11 @@ const App = {
     Store.endSession(tableId);
     this.checkoutTableId = null;
     Modal.close();
-    Toast.show(`Đã thanh toán ${table.name}! Tổng: ${formatMoney(total)}`, 'success');
+    if (memberId && memberBalanceAfter < 0) {
+      Toast.show(`Đã thanh toán ${table.name}! Ghi nợ: ${formatMoney(memberBalanceAfter)}`, 'warning');
+    } else {
+      Toast.show(`Đã thanh toán ${table.name}! Tổng: ${formatMoney(total)}`, 'success');
+    }
     this.renderTables();
     if (shouldPrint) setTimeout(() => this.printInvoice(invoice), 400);
   },
@@ -1070,7 +991,10 @@ const App = {
           ${invoice.paymentMethod === 'member_balance' ? `
             <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
             <div style="display:flex;justify-content:space-between"><span>Số tiền trừ:</span><span>-${formatMoney(invoice.total)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-weight:900"><span>Số dư còn lại:</span><span>${formatMoney(invoice.memberBalanceAfter)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:900">
+              <span>${invoice.memberBalanceAfter < 0 ? 'Số dư (Ghi nợ):' : 'Số dư còn lại:'}</span>
+              <span style="${invoice.memberBalanceAfter < 0 ? 'color:#dc2626' : ''}">${formatMoney(invoice.memberBalanceAfter)}</span>
+            </div>
           ` : ''}
         </div>
       ` : ''}
@@ -1078,7 +1002,7 @@ const App = {
       <div class="invoice-section-title">CHI TIẾT HÓA ĐƠN</div>
       <div class="invoice-item">
         <span class="item-name">Tiền bàn bida</span>
-        <span class="item-detail">${h}h${m}m × ${formatMoney(invoice.pricePerHour)}/h</span>
+        <span class="item-detail">${h}h${m}m · Bảng giá tự động theo giờ</span>
         <span class="item-price">${formatMoney(invoice.tableBill)}</span>
       </div>
 
@@ -1141,10 +1065,13 @@ const App = {
           <div class="checkout-section" style="background:var(--bg-subtle,#f8fafc);padding:10px;border-radius:8px;border:1px solid var(--border-color,#e2e8f0)">
             <div class="checkout-section-title">${ic('user-check', 14)} Thông tin Thành viên</div>
             <div class="checkout-row"><span>Khách hàng</span><span class="value" style="font-weight:700">${inv.memberName} ${inv.memberRank ? `(${inv.memberRank})` : ''}</span></div>
-            <div class="checkout-row"><span>Hình thức PTTT</span><span class="value" style="display:inline-flex;align-items:center;gap:4px">${inv.paymentMethod === 'member_balance' ? ic('credit-card',14) + ' Trừ số dư tài khoản' : ic('banknote',14) + ' Tiền mặt / CK'}</span></div>
+            <div class="checkout-row"><span>Hình thức PTTT</span><span class="value" style="display:inline-flex;align-items:center;gap:4px">${inv.paymentMethod === 'member_balance' ? ic('credit-card', 14) + ' Trừ số dư tài khoản' : ic('banknote', 14) + ' Tiền mặt / CK'}</span></div>
             ${inv.paymentMethod === 'member_balance' ? `
               <div class="checkout-row"><span>Số dư trước TT</span><span class="value">${formatMoney(inv.memberBalanceBefore)}</span></div>
-              <div class="checkout-row"><span>Số dư còn lại</span><span class="value" style="color:#047857;font-weight:700">${formatMoney(inv.memberBalanceAfter)}</span></div>
+              <div class="checkout-row">
+                <span>${inv.memberBalanceAfter < 0 ? 'Số dư (Ghi nợ)' : 'Số dư còn lại'}</span>
+                <span class="value" style="color:${inv.memberBalanceAfter < 0 ? '#dc2626' : '#047857'};font-weight:700">${formatMoney(inv.memberBalanceAfter)}</span>
+              </div>
             ` : ''}
           </div>` : ''}
         <div class="checkout-section">
@@ -1189,52 +1116,52 @@ const App = {
 
   renderRevenue() {
     const invoices = Store.getInvoices();
-    const filter   = this.currentRevenueFilter;
-    const now      = new Date();
+    const filter = this.currentRevenueFilter;
+    const now = new Date();
     let startTime = 0, labels = [], data = [];
 
     if (filter === 'day') {
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      startTime   = today.getTime();
+      startTime = today.getTime();
       labels = Array.from({ length: 24 }, (_, i) => `${i}h`);
-      data   = labels.map((_, i) => {
+      data = labels.map((_, i) => {
         const s = new Date(today.getFullYear(), today.getMonth(), today.getDate(), i).getTime();
         return invoices.filter(inv => inv.createdAt >= s && inv.createdAt < s + 3600000)
           .reduce((sum, inv) => sum + inv.total, 0);
       });
     } else if (filter === 'week') {
       for (let i = 6; i >= 0; i--) {
-        const d  = new Date(now); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
+        const d = new Date(now); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
         const nd = new Date(d); nd.setDate(d.getDate() + 1);
         labels.push(formatDateShort(d.getTime()));
         data.push(invoices.filter(inv => inv.createdAt >= d.getTime() && inv.createdAt < nd.getTime())
           .reduce((s, inv) => s + inv.total, 0));
       }
-      const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0);
+      const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0);
       startTime = d.getTime();
     } else if (filter === 'month') {
-      const ms   = new Date(now.getFullYear(), now.getMonth(), 1);
+      const ms = new Date(now.getFullYear(), now.getMonth(), 1);
       const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      startTime  = ms.getTime();
-      labels = Array.from({ length: days }, (_, i) => `${i+1}/${now.getMonth()+1}`);
-      data   = labels.map((_, i) => {
-        const d  = new Date(now.getFullYear(), now.getMonth(), i + 1);
+      startTime = ms.getTime();
+      labels = Array.from({ length: days }, (_, i) => `${i + 1}/${now.getMonth() + 1}`);
+      data = labels.map((_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth(), i + 1);
         const nd = new Date(now.getFullYear(), now.getMonth(), i + 2);
         return invoices.filter(inv => inv.createdAt >= d.getTime() && inv.createdAt < nd.getTime())
           .reduce((s, inv) => s + inv.total, 0);
       });
     } else if (filter === 'custom') {
       const fromVal = document.getElementById('date-from')?.value;
-      const toVal   = document.getElementById('date-to')?.value;
-      const fromD   = fromVal ? new Date(fromVal) : new Date(now.getFullYear(), now.getMonth(), 1);
-      const toD     = toVal   ? new Date(toVal)   : now;
-      toD.setHours(23,59,59,999);
+      const toVal = document.getElementById('date-to')?.value;
+      const fromD = fromVal ? new Date(fromVal) : new Date(now.getFullYear(), now.getMonth(), 1);
+      const toD = toVal ? new Date(toVal) : now;
+      toD.setHours(23, 59, 59, 999);
       startTime = fromD.getTime();
       // Build per-day labels for custom range
       const msPerDay = 86400000;
       const diffDays = Math.min(Math.ceil((toD - fromD) / msPerDay), 92); // max 92 days
       for (let i = 0; i < diffDays; i++) {
-        const d  = new Date(fromD.getTime() + i * msPerDay);
+        const d = new Date(fromD.getTime() + i * msPerDay);
         const nd = new Date(d.getTime() + msPerDay);
         labels.push(formatDateShort(d.getTime()));
         data.push(invoices.filter(inv => inv.createdAt >= d.getTime() && inv.createdAt < Math.min(nd.getTime(), toD.getTime()))
@@ -1242,27 +1169,27 @@ const App = {
       }
     }
 
-    const filtered     = filter === 'custom'
+    const filtered = filter === 'custom'
       ? (() => {
-          const fromVal = document.getElementById('date-from')?.value;
-          const toVal   = document.getElementById('date-to')?.value;
-          const fromD   = fromVal ? new Date(fromVal) : new Date(now.getFullYear(), now.getMonth(), 1);
-          const toD     = toVal ? new Date(toVal) : now; toD.setHours(23,59,59,999);
-          return invoices.filter(inv => inv.createdAt >= fromD.getTime() && inv.createdAt <= toD.getTime());
-        })()
+        const fromVal = document.getElementById('date-from')?.value;
+        const toVal = document.getElementById('date-to')?.value;
+        const fromD = fromVal ? new Date(fromVal) : new Date(now.getFullYear(), now.getMonth(), 1);
+        const toD = toVal ? new Date(toVal) : now; toD.setHours(23, 59, 59, 999);
+        return invoices.filter(inv => inv.createdAt >= fromD.getTime() && inv.createdAt <= toD.getTime());
+      })()
       : invoices.filter(inv => inv.createdAt >= startTime);
 
     const totalRevenue = filtered.reduce((s, i) => s + i.total, 0);
-    const avgInvoice   = filtered.length ? totalRevenue / filtered.length : 0;
+    const avgInvoice = filtered.length ? totalRevenue / filtered.length : 0;
     const tableBillSum = filtered.reduce((s, i) => s + (i.tableBill || 0), 0);
-    const foodBillSum  = filtered.reduce((s, i) => s + (i.foodBill  || 0), 0);
+    const foodBillSum = filtered.reduce((s, i) => s + (i.foodBill || 0), 0);
 
     const st = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    st('rev-total',  formatMoney(totalRevenue));
-    st('rev-count',  filtered.length);
-    st('rev-avg',    formatMoney(avgInvoice));
-    st('rev-table',  formatMoney(tableBillSum));
-    st('rev-food',   formatMoney(foodBillSum));
+    st('rev-total', formatMoney(totalRevenue));
+    st('rev-count', filtered.length);
+    st('rev-avg', formatMoney(avgInvoice));
+    st('rev-table', formatMoney(tableBillSum));
+    st('rev-food', formatMoney(foodBillSum));
 
     // Show/hide date range inputs
     const drWrap = document.getElementById('date-range-wrap');
@@ -1294,7 +1221,7 @@ const App = {
     }
     tbody.innerHTML = invoices.slice(0, 100).map(inv => `
       <tr>
-        <td><span class="inv-id">#${inv.id.replace('inv_','').slice(-6)}</span></td>
+        <td><span class="inv-id">#${inv.id.replace('inv_', '').slice(-6)}</span></td>
         <td style="font-weight:700;color:var(--text-primary)">${inv.tableName}</td>
         <td>${formatDateTime(inv.createdAt)}</td>
         <td style="font-family:monospace">${formatTime(inv.elapsedSeconds)}</td>
@@ -1313,9 +1240,9 @@ const App = {
   // ────────────────────────────── MENU PAGE ──────────────────────────────
 
   renderMenuPage() {
-    const menu  = Store.getMenu();
-    const cats  = ['Tất cả', ...new Set(menu.map(m => m.category))];
-    const fEl   = document.getElementById('menu-cat-filters');
+    const menu = Store.getMenu();
+    const cats = ['Tất cả', ...new Set(menu.map(m => m.category))];
+    const fEl = document.getElementById('menu-cat-filters');
     if (fEl) {
       fEl.innerHTML = cats.map(c => `
         <button class="food-cat-tab ${c === 'Tất cả' ? 'active' : ''}"
@@ -1331,13 +1258,13 @@ const App = {
   },
 
   _renderMenuGrid(cat) {
-    const menu     = Store.getMenu();
+    const menu = Store.getMenu();
     const filtered = cat === 'Tất cả' ? menu : menu.filter(m => m.category === cat);
-    const grid     = document.getElementById('menu-grid');
+    const grid = document.getElementById('menu-grid');
     if (!grid) return;
 
     if (!filtered.length) {
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package',48)}<p>Không có món nào</p></div>`;
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package', 48)}<p>Không có món nào</p></div>`;
       lucide.createIcons({ nodes: [grid] });
       return;
     }
@@ -1373,7 +1300,7 @@ const App = {
     Modal.show(`
       <div class="modal">
         <div class="modal-header">
-          <div class="modal-title">${ic('plus',20)} Thêm món mới</div>
+          <div class="modal-title">${ic('plus', 20)} Thêm món mới</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
         <div class="form-row">
@@ -1408,9 +1335,9 @@ const App = {
   },
 
   _saveNewMenuItem() {
-    const name  = document.getElementById('ni-name').value.trim();
+    const name = document.getElementById('ni-name').value.trim();
     const emoji = document.getElementById('ni-emoji').value.trim() || '🍽️';
-    const cat   = document.getElementById('ni-cat').value;
+    const cat = document.getElementById('ni-cat').value;
     const price = parseInt(document.getElementById('ni-price').value) || 0;
     if (!name) { Toast.show('Vui lòng nhập tên món!', 'error'); return; }
     Store.addMenuItem({ name, emoji, category: cat, price });
@@ -1425,7 +1352,7 @@ const App = {
     Modal.show(`
       <div class="modal">
         <div class="modal-header">
-          <div class="modal-title">${ic('pencil',20)} Sửa món</div>
+          <div class="modal-title">${ic('pencil', 20)} Sửa món</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
         <div class="form-row">
@@ -1436,8 +1363,8 @@ const App = {
           <div class="form-group">
             <label class="form-label">Danh mục</label>
             <select id="ei-cat" class="form-control">
-              ${['Thức uống','Đồ ăn nhẹ','Khác'].map(c =>
-                `<option ${c===item.category?'selected':''}>${c}</option>`).join('')}
+              ${['Thức uống', 'Đồ ăn nhẹ', 'Khác'].map(c =>
+      `<option ${c === item.category ? 'selected' : ''}>${c}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -1459,9 +1386,9 @@ const App = {
   },
 
   _saveMenuItemEdit(itemId) {
-    const name  = document.getElementById('ei-name').value.trim();
+    const name = document.getElementById('ei-name').value.trim();
     const emoji = document.getElementById('ei-emoji').value.trim() || '🍽️';
-    const cat   = document.getElementById('ei-cat').value;
+    const cat = document.getElementById('ei-cat').value;
     const price = parseInt(document.getElementById('ei-price').value) || 0;
     if (!name) { Toast.show('Vui lòng nhập tên món!', 'error'); return; }
     Store.updateMenuItem(itemId, { name, emoji, category: cat, price });
@@ -1475,7 +1402,7 @@ const App = {
     Modal.show(`
       <div class="modal">
         <div class="modal-header">
-          <div class="modal-title" style="color:var(--danger)">${ic('trash-2',20)} Xóa món</div>
+          <div class="modal-title" style="color:var(--danger)">${ic('trash-2', 20)} Xóa món</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
         <p style="color:var(--text-secondary);margin-bottom:24px">
@@ -1547,16 +1474,16 @@ const App = {
 
   _renderCafeMenuGrid(cat) {
     this._currentCafeCat = cat;
-    const menu     = Store.getMenu();
+    const menu = Store.getMenu();
     let filtered = cat === 'Tất cả' ? menu : menu.filter(m => m.category === cat);
     if (this._cafeSearchQuery) {
       const q = this._cafeSearchQuery.toLowerCase().trim();
       filtered = filtered.filter(m => (m.name || '').toLowerCase().includes(q) || (m.category || '').toLowerCase().includes(q));
     }
-    const grid     = document.getElementById('cafe-menu-grid');
+    const grid = document.getElementById('cafe-menu-grid');
     if (!grid) return;
     if (!filtered.length) {
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package',32)}<p>Không tìm thấy món nào</p></div>`;
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${ic('package', 32)}<p>Không tìm thấy món nào</p></div>`;
       lucide.createIcons({ nodes: [grid] });
       return;
     }
@@ -1602,14 +1529,14 @@ const App = {
   },
 
   _renderCafeCart() {
-    const listEl  = document.getElementById('cafe-cart-list');
+    const listEl = document.getElementById('cafe-cart-list');
     const totalEl = document.getElementById('cafe-cart-total');
-    const payBtn  = document.getElementById('cafe-pay-btn');
+    const payBtn = document.getElementById('cafe-pay-btn');
     if (!listEl) return;
 
     const total = this._cafeCart.reduce((s, i) => s + i.price * i.quantity, 0);
     if (totalEl) totalEl.textContent = formatMoney(total);
-    if (payBtn)  payBtn.disabled = this._cafeCart.length === 0;
+    if (payBtn) payBtn.disabled = this._cafeCart.length === 0;
 
     if (this._cafeCart.length === 0) {
       listEl.innerHTML = `<div class="order-empty">${ic('shopping-cart', 40)}<p>Chưa có món nào<br><small>Bấm vào món bên trái để thêm</small></p></div>`;
@@ -1675,25 +1602,24 @@ const App = {
   },
 
   _updateCafeTotal(subtotal) {
-    const pct  = parseFloat(document.getElementById('cafe-discount-pct')?.value) || 0;
+    const pct = parseFloat(document.getElementById('cafe-discount-pct')?.value) || 0;
     const disc = Math.round(subtotal * pct / 100);
-    const tot  = subtotal - disc;
+    const tot = subtotal - disc;
     const discEl = document.getElementById('cafe-discount-amount');
-    const totEl  = document.getElementById('cafe-checkout-total');
+    const totEl = document.getElementById('cafe-checkout-total');
     if (discEl) discEl.textContent = `— ${formatMoney(disc)}`;
-    if (totEl)  totEl.textContent  = formatMoney(tot);
+    if (totEl) totEl.textContent = formatMoney(tot);
 
     this._onPaymentMethodChange('cafe-discount-pct', subtotal);
   },
 
   _finalizeCafeBill(shouldPrint) {
     const discountPct = parseFloat(document.getElementById('cafe-discount-pct')?.value) || 0;
-    const foodBill    = this._cafeCart.reduce((s, i) => s + i.price * i.quantity, 0);
-    const discount    = Math.round(foodBill * discountPct / 100);
-    const total       = foodBill - discount;
-    const memberId    = document.getElementById('checkout-member-select')?.value || null;
-    const payRadio    = document.querySelector('input[name="pay_method_cafe-discount-pct"]:checked');
-    const paymentMethod = (memberId && payRadio) ? payRadio.value : 'cash';
+    const foodBill = this._cafeCart.reduce((s, i) => s + i.price * i.quantity, 0);
+    const discount = Math.round(foodBill * discountPct / 100);
+    const total = foodBill - discount;
+    const memberId = document.getElementById('checkout-member-select')?.value || null;
+    const paymentMethod = memberId ? 'member_balance' : 'cash';
 
     let memberBalanceBefore = 0;
     let memberBalanceAfter = 0;
@@ -1707,34 +1633,29 @@ const App = {
         const rank = this._memberRank(member.points);
         memberRank = rank.label;
 
-        if (paymentMethod === 'member_balance') {
-          memberBalanceBefore = member.balance || 0;
-          if (memberBalanceBefore < total) {
-            Toast.show('Số dư tài khoản thành viên không đủ!', 'error');
-            return;
-          }
-          const res = Store.deductMemberBalance(memberId, total, null, 'Thanh toán Bill Cafe');
-          memberBalanceAfter = res.member.balance;
-        }
+        memberBalanceBefore = member.balance || 0;
+        // Trừ ví thành viên, cho phép ghi nợ (số dư âm)
+        const res = Store.deductMemberBalance(memberId, total, null, 'Thanh toán Bill Cafe');
+        memberBalanceAfter = res.member.balance;
       }
     }
 
     const invoice = Store.addInvoice({
-      tableName:      'Bill Cafe',
-      tableId:        null,
-      pricePerHour:   0,
-      startTime:      Date.now(),
-      endTime:        Date.now(),
+      tableName: 'Bill Cafe',
+      tableId: null,
+      pricePerHour: 0,
+      startTime: Date.now(),
+      endTime: Date.now(),
       elapsedSeconds: 0,
-      tableBill:      0,
-      foodItems:      [...this._cafeCart],
+      tableBill: 0,
+      foodItems: [...this._cafeCart],
       foodBill,
       discountPct,
       discount,
-      subtotal:       foodBill,
+      subtotal: foodBill,
       total,
-      type:           'cafe',
-      memberId:       memberId || null,
+      type: 'cafe',
+      memberId: memberId || null,
       memberName,
       memberRank,
       paymentMethod,
@@ -1749,7 +1670,11 @@ const App = {
 
     this._cafeCart = [];
     Modal.close();
-    Toast.show(`Thanh toán ${formatMoney(total)} thành công!`, 'success');
+    if (memberId && memberBalanceAfter < 0) {
+      Toast.show(`Thanh toán thành công! Ghi nợ: ${formatMoney(memberBalanceAfter)}`, 'warning');
+    } else {
+      Toast.show(`Thanh toán ${formatMoney(total)} thành công!`, 'success');
+    }
     this._renderCafeCart();
     if (shouldPrint) setTimeout(() => this._printCafeInvoice(invoice), 400);
   },
@@ -1764,7 +1689,7 @@ const App = {
         <div class="invoice-shop-info">${settings.shopAddress}</div>
         <div class="invoice-shop-info">Hotline: ${settings.shopPhone}</div>
         <div class="invoice-divider-dashed"></div>
-        <div class="invoice-number">Bill Cafe #${invoice.id.replace('inv_','').slice(-6)}</div>
+        <div class="invoice-number">Bill Cafe #${invoice.id.replace('inv_', '').slice(-6)}</div>
         <div class="invoice-date-text">${formatDateTime(invoice.createdAt)}</div>
       </div>
 
@@ -1775,7 +1700,10 @@ const App = {
           ${invoice.paymentMethod === 'member_balance' ? `
             <div style="display:flex;justify-content:space-between"><span>Số dư trước TT:</span><span>${formatMoney(invoice.memberBalanceBefore)}</span></div>
             <div style="display:flex;justify-content:space-between"><span>Số tiền trừ:</span><span>-${formatMoney(invoice.total)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-weight:900"><span>Số dư còn lại:</span><span>${formatMoney(invoice.memberBalanceAfter)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:900">
+              <span>${invoice.memberBalanceAfter < 0 ? 'Số dư (Ghi nợ):' : 'Số dư còn lại:'}</span>
+              <span style="${invoice.memberBalanceAfter < 0 ? 'color:#dc2626' : ''}">${formatMoney(invoice.memberBalanceAfter)}</span>
+            </div>
           ` : ''}
         </div>
       ` : ''}
@@ -1806,10 +1734,10 @@ const App = {
 
   /** Fixed colour palette per rank id */
   _RANK_PALETTE: {
-    dong:    { color: '#b45309', bg: 'rgba(180,83,9,0.10)',    border: 'rgba(180,83,9,0.3)'    },
-    bac:     { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.4)' },
-    vang:    { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.4)'  },
-    diamond: { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.4)'   },
+    dong: { color: '#b45309', bg: 'rgba(180,83,9,0.10)', border: 'rgba(180,83,9,0.3)' },
+    bac: { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.4)' },
+    vang: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.4)' },
+    diamond: { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.4)' },
   },
 
   /**
@@ -1832,7 +1760,7 @@ const App = {
     }
     // Fallback to the lowest rank
     const first = ranks[ranks.length - 1];
-    const pal   = this._RANK_PALETTE[first?.id] || this._RANK_PALETTE.dong;
+    const pal = this._RANK_PALETTE[first?.id] || this._RANK_PALETTE.dong;
     return { ...first, ...pal, labelHtml: `${ic(first.icon, 13)} ${first.label}` };
   },
 
@@ -1859,83 +1787,267 @@ const App = {
     lucide.createIcons({ nodes: [el] });
   },
 
-  /** Renders the member selector HTML block for checkout modals */
+  /** Renders the modern member selector block for checkout modals */
   _memberSelectorHTML(discountInputId, subtotal) {
-    const members = Store.getMembers();
-    const options = members.map(m => {
-      const rank = this._memberRank(m.points);
-      return `<option value="${m.id}">${m.name} (${rank.label} - Dư: ${formatMoney(m.balance || 0)})</option>`;
-    }).join('');
-
     return `
-      <div class="member-selector-wrap" style="background:var(--bg-subtle, #f8fafc);padding:12px;border-radius:10px;border:1px solid var(--border-color,#e2e8f0);margin-bottom:14px">
-        <div class="member-selector-title" style="font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
-          ${ic('users', 14)} Khách hàng & Hình thức Thanh toán
+      <div class="member-selector-wrap" style="background:var(--bg-subtle, #f8fafc);padding:14px;border-radius:12px;border:1px solid var(--border-color,#e2e8f0);margin-bottom:14px">
+        <div class="member-selector-title" style="font-weight:700;font-size:13px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+          <span style="display:flex;align-items:center;gap:6px">${ic('users', 15)} Khách hàng & Thanh toán</span>
+          <span id="checkout-guest-badge" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background:#e2e8f0;color:#475569;display:inline-flex;align-items:center;gap:4px">
+            ${ic('user', 11)} Khách lẻ
+          </span>
         </div>
-        <div class="member-selector-row">
-          <select class="member-selector-select form-control" id="checkout-member-select"
-            onchange="App._onCheckoutMemberChange('${discountInputId}', ${subtotal})">
-            <option value="">— Khách lẻ (Tiền mặt / Chuyển khoản) —</option>
-            ${options}
-          </select>
-        </div>
-        
-        <div id="checkout-member-chip" style="margin-top:8px"></div>
 
-        <div id="payment-method-box" style="margin-top:10px;display:none;border-top:1px dashed #cbd5e1;padding-top:10px">
-          <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Hình thức thanh toán:</label>
-          <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="radio" name="pay_method_${discountInputId}" value="cash" checked onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
-              ${ic('banknote', 14)} Tiền mặt / CK
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="radio" name="pay_method_${discountInputId}" value="member_balance" onchange="App._onPaymentMethodChange('${discountInputId}', ${subtotal})">
-              ${ic('credit-card', 14)} Trừ tài khoản TV
-            </label>
+        <!-- Hidden input for selected member id (backward compatible) -->
+        <input type="hidden" id="checkout-member-select" value="">
+
+        <!-- Search input box (active when no member selected) -->
+        <div id="checkout-member-search-box" class="member-search-wrap">
+          <input type="text" id="checkout-member-search" class="member-search-input"
+            placeholder="Nhập tên hoặc số điện thoại khách hàng..."
+            autocomplete="off"
+            onfocus="App._filterCheckoutMembers('${discountInputId}', ${subtotal})"
+            oninput="App._filterCheckoutMembers('${discountInputId}', ${subtotal})"
+            onkeydown="App._onCheckoutSearchKeydown(event, '${discountInputId}', ${subtotal})">
+          <button type="button" id="checkout-member-search-clear" class="member-search-clear"
+            onclick="App._clearCheckoutMemberSearch('${discountInputId}', ${subtotal})" title="Xóa tìm kiếm">
+            ${ic('x', 14)}
+          </button>
+
+          <!-- Autocomplete results dropdown -->
+          <div id="checkout-member-search-results" class="member-search-results"></div>
+        </div>
+
+        <!-- Selected member card (visible when a member is selected) -->
+        <div id="checkout-member-card" style="display:none"></div>
+
+        <!-- Payment method info (always deduct from wallet for members) -->
+        <div id="payment-method-box" style="margin-top:12px;display:none;border-top:1px dashed #cbd5e1;padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:10px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#15803d">
+              ${ic('wallet', 16)} Hình thức: <span>Trừ ví thành viên</span>
+            </div>
+            <span style="font-size:11px;background:#dcfce7;color:#166534;font-weight:700;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:3px">
+              ${ic('check', 11)} Tự động trừ ví
+            </span>
           </div>
+          <!-- Hidden radio inputs so checkout processors read paymentMethod consistently -->
+          <input type="radio" name="pay_method_${discountInputId}" value="member_balance" checked style="display:none">
+          <input type="radio" name="pay_method_${discountInputId}" value="cash" style="display:none">
+
           <div id="payment-method-notice"></div>
         </div>
       </div>`;
   },
 
-  _onCheckoutMemberChange(discountInputId, subtotal) {
-    const memberId = document.getElementById('checkout-member-select')?.value;
+  _filterCheckoutMembers(discountInputId, subtotal) {
+    const input = document.getElementById('checkout-member-search');
+    const clearBtn = document.getElementById('checkout-member-search-clear');
+    const resultsContainer = document.getElementById('checkout-member-search-results');
+    if (!input || !resultsContainer) return;
+
+    const query = input.value.trim();
+    if (clearBtn) clearBtn.style.display = query ? 'flex' : 'none';
+
+    const members = Store.getMembers();
+    const normalize = (s) => (s || '').toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd');
+    const qNorm = normalize(query);
+
+    const matched = members.filter(m => {
+      if (!qNorm) return true;
+      const nameNorm = normalize(m.name);
+      const phoneNorm = normalize(m.phone || '');
+      return nameNorm.includes(qNorm) || phoneNorm.includes(qNorm);
+    });
+
+    resultsContainer.style.display = 'block';
+
+    const guestRow = `
+      <div class="member-search-item" onclick="App._selectCheckoutMember('', '${discountInputId}', ${subtotal})">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="color:#64748b;display:flex">${ic('user-x', 15)}</span>
+          <div>
+            <div class="msi-name" style="color:#475569">Khách lẻ</div>
+            <div class="msi-meta">Thanh toán thông thường, không tích điểm</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (matched.length === 0) {
+      resultsContainer.innerHTML = guestRow + `
+        <div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px">
+          Không tìm thấy khách hàng nào khớp với "<strong>${query}</strong>"
+        </div>`;
+    } else {
+      resultsContainer.innerHTML = guestRow + matched.map((m, idx) => {
+        const rank = this._memberRank(m.points);
+        const bal = m.balance || 0;
+        const balColor = bal < 0 ? '#dc2626' : 'var(--success, #059669)';
+        const balText = bal < 0 ? `Nợ ${formatMoney(bal)}` : formatMoney(bal);
+        return `
+          <div class="member-search-item ${idx === 0 && query ? 'highlighted' : ''}" data-member-id="${m.id}"
+            onclick="App._selectCheckoutMember('${m.id}', '${discountInputId}', ${subtotal})">
+            <div style="display:flex;align-items:center;gap:9px">
+              <div class="msc-avatar" style="width:28px;height:28px;font-size:11px">${m.name.charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="msi-name">${m.name} <span style="font-weight:600;font-size:11px;color:${rank.color}">(${rank.label})</span></div>
+                <div class="msi-meta" style="display:flex;align-items:center;gap:4px">
+                  ${m.phone ? `<span style="display:inline-flex;align-items:center;gap:3px">${ic('phone', 10)} ${m.phone}</span><span>·</span>` : ''}
+                  <span>Điểm: ${m.points || 0}</span>
+                  <span>·</span>
+                  <span>${rank.discount > 0 ? `Giảm ${rank.discount}%` : 'Không giảm'}</span>
+                </div>
+              </div>
+            </div>
+            <div class="msi-balance" style="color:${balColor}">
+              <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">
+                ${ic('wallet', 12)} ${balText}
+              </div>
+              <div style="font-size:10px;font-weight:400;color:var(--text-muted)">${bal < 0 ? 'Đang nợ' : 'Số dư ví'}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+    lucide.createIcons({ nodes: [resultsContainer] });
+  },
+
+  _selectCheckoutMember(memberId, discountInputId, subtotal) {
+    const hiddenSelect = document.getElementById('checkout-member-select');
+    const searchBox = document.getElementById('checkout-member-search-box');
+    const searchInput = document.getElementById('checkout-member-search');
+    const resultsContainer = document.getElementById('checkout-member-search-results');
+    const memberCard = document.getElementById('checkout-member-card');
+    const guestBadge = document.getElementById('checkout-guest-badge');
     const pmBox = document.getElementById('payment-method-box');
-    const chipEl = document.getElementById('checkout-member-chip');
+
+    if (resultsContainer) {
+      resultsContainer.style.display = 'none';
+      resultsContainer.innerHTML = '';
+    }
+
+    if (hiddenSelect) hiddenSelect.value = memberId || '';
 
     if (!memberId) {
+      if (searchBox) searchBox.style.display = 'block';
+      if (searchInput) searchInput.value = '';
+      if (memberCard) { memberCard.style.display = 'none'; memberCard.innerHTML = ''; }
+      if (guestBadge) {
+        guestBadge.style.display = 'inline-flex';
+        guestBadge.innerHTML = `${ic('user', 11)} Khách lẻ`;
+        lucide.createIcons({ nodes: [guestBadge] });
+      }
       if (pmBox) pmBox.style.display = 'none';
-      if (chipEl) chipEl.innerHTML = '';
       this._applyMemberDiscount(discountInputId, subtotal, null);
+      this._setPayMethod('cash', discountInputId, subtotal);
       return;
     }
 
-    if (pmBox) pmBox.style.display = 'block';
     const member = Store.getMember(memberId);
     if (!member) return;
 
     const rank = this._memberRank(member.points);
-    if (chipEl) {
-      chipEl.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;border:1px solid #bbf7d0;padding:6px 10px;border-radius:8px;font-size:12px">
-          <div>
-            <span style="font-weight:700;color:#166534">${member.name}</span>
-            <span style="margin-left:6px;color:${rank.color};font-weight:600">${rank.labelHtml} (${rank.discount > 0 ? 'Giảm ' + rank.discount + '%' : 'Không giảm'})</span>
+    const bal = member.balance || 0;
+    const balStyle = bal < 0 ? 'color:#dc2626;background:#fee2e2;border:1px solid #fca5a5' : '';
+    const balLabel = bal < 0 ? `Nợ ${formatMoney(bal)}` : formatMoney(bal);
+
+    if (searchBox) searchBox.style.display = 'none';
+    if (guestBadge) guestBadge.style.display = 'none';
+
+    if (memberCard) {
+      memberCard.style.display = 'block';
+      memberCard.innerHTML = `
+        <div class="member-selected-card">
+          <div class="msc-left">
+            <div class="msc-avatar">${member.name.charAt(0).toUpperCase()}</div>
+            <div class="msc-info">
+              <div class="msc-name">${member.name}</div>
+              <div class="msc-sub">
+                <span style="font-weight:700;color:${rank.color}">${rank.labelHtml}</span>
+                <span>·</span>
+                <span>${rank.discount > 0 ? `Giảm ${rank.discount}%` : 'Không giảm'}</span>
+                ${member.phone ? `<span>·</span><span style="display:inline-flex;align-items:center;gap:3px">${ic('phone', 11)} ${member.phone}</span>` : ''}
+              </div>
+            </div>
           </div>
-          <span style="font-weight:800;color:#15803d">${ic('credit-card', 14)} Số dư: ${formatMoney(member.balance || 0)}</span>
+          <div class="msc-right">
+            <div class="msc-balance" style="${balStyle}">${ic('wallet', 13)} ${balLabel}</div>
+            <button type="button" class="msc-change-btn" onclick="App._deselectCheckoutMember('${discountInputId}', ${subtotal})">
+              ${ic('refresh-cw', 11)} Đổi khách
+            </button>
+          </div>
         </div>`;
-      lucide.createIcons({ nodes: [chipEl] });
+      lucide.createIcons({ nodes: [memberCard] });
     }
 
+    if (pmBox) pmBox.style.display = 'block';
+
+    this._setPayMethod('member_balance', discountInputId, subtotal);
     this._applyMemberDiscount(discountInputId, subtotal, member);
+  },
+
+  _deselectCheckoutMember(discountInputId, subtotal) {
+    this._selectCheckoutMember('', discountInputId, subtotal);
+    const searchInput = document.getElementById('checkout-member-search');
+    if (searchInput) {
+      searchInput.focus();
+      this._filterCheckoutMembers(discountInputId, subtotal);
+    }
+  },
+
+  _clearCheckoutMemberSearch(discountInputId, subtotal) {
+    const input = document.getElementById('checkout-member-search');
+    const clearBtn = document.getElementById('checkout-member-search-clear');
+    if (input) input.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    this._filterCheckoutMembers(discountInputId, subtotal);
+    input?.focus();
+  },
+
+  _onCheckoutSearchKeydown(event, discountInputId, subtotal) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const resultsContainer = document.getElementById('checkout-member-search-results');
+      const firstItem = resultsContainer?.querySelector('.member-search-item[data-member-id]');
+      if (firstItem && firstItem.dataset.memberId) {
+        this._selectCheckoutMember(firstItem.dataset.memberId, discountInputId, subtotal);
+      }
+    } else if (event.key === 'Escape') {
+      const resultsContainer = document.getElementById('checkout-member-search-results');
+      if (resultsContainer) resultsContainer.style.display = 'none';
+    }
+  },
+
+  _setPayMethod(method, discountInputId, subtotal) {
+    const cashRadio = document.querySelector(`input[name="pay_method_${discountInputId}"][value="cash"]`);
+    const balRadio = document.querySelector(`input[name="pay_method_${discountInputId}"][value="member_balance"]`);
+
+    if (method === 'member_balance') {
+      if (balRadio) balRadio.checked = true;
+    } else {
+      if (cashRadio) cashRadio.checked = true;
+    }
     this._onPaymentMethodChange(discountInputId, subtotal);
+  },
+
+  _bindSearchOutsideClick() {
+    if (this._searchOutsideBound) return;
+    this._searchOutsideBound = true;
+    document.addEventListener('click', (e) => {
+      const resultsContainer = document.getElementById('checkout-member-search-results');
+      const searchWrap = e.target.closest?.('.member-search-wrap');
+      if (resultsContainer && !searchWrap) {
+        resultsContainer.style.display = 'none';
+      }
+    });
   },
 
   _onPaymentMethodChange(discountInputId, subtotal) {
     const memberId = document.getElementById('checkout-member-select')?.value;
     const member = memberId ? Store.getMember(memberId) : null;
-    const radioVal = document.querySelector(`input[name="pay_method_${discountInputId}"]:checked`)?.value || 'cash';
     const noticeEl = document.getElementById('payment-method-notice');
 
     // Calculate current total
@@ -1949,39 +2061,40 @@ const App = {
     }
 
     const confirmBtns = document.querySelectorAll('.checkout-btn-confirm');
+    // Luôn cho phép thanh toán
+    confirmBtns.forEach(btn => btn.disabled = false);
 
-    if (radioVal === 'member_balance' && member) {
+    if (member) {
       const currentBal = member.balance || 0;
-      if (currentBal >= totalPayable) {
-        const remaining = currentBal - totalPayable;
+      const afterBal = currentBal - totalPayable;
+      if (afterBal >= 0) {
         if (noticeEl) {
           noticeEl.innerHTML = `
-            <div style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600">
-              ${ic('check-circle', 14)} Số dư đủ thanh toán. Số dư còn lại sau bill: <strong>${formatMoney(remaining)}</strong>
+            <div style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">
+              ${ic('check-circle', 14)} Số dư đủ thanh toán. Còn lại sau bill: <strong>${formatMoney(afterBal)}</strong>
             </div>`;
           lucide.createIcons({ nodes: [noticeEl] });
         }
-        confirmBtns.forEach(btn => btn.disabled = false);
       } else {
-        const need = totalPayable - currentBal;
+        const debt = Math.abs(afterBal);
         if (noticeEl) {
           noticeEl.innerHTML = `
-            <div style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;padding:8px 10px;border-radius:6px;font-size:12px">
-              ${ic('alert-triangle', 14)} <strong>Số dư không đủ!</strong> (Thiếu <strong>${formatMoney(need)}</strong>).<br>
-              Vui lòng nộp thêm tiền hoặc chọn thanh toán Tiền mặt.
-              <div style="margin-top:6px">
-                <button class="btn btn-xs btn-success" type="button" style="padding:3px 8px;font-size:11px" onclick="App.depositMemberModal('${member.id}')">
-                  ${ic('plus-circle',12)} Nộp tiền cho ${member.name}
-                </button>
+            <div style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;padding:10px 12px;border-radius:8px;font-size:12px">
+              <div style="font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:4px;color:#b45309">
+                ${ic('alert-triangle', 14)} Số dư không đủ (Thiếu ${formatMoney(debt)}) — Cho phép ghi nợ
               </div>
+              <div style="color:#78350f;margin-bottom:6px">
+                Hệ thống vẫn cho thanh toán và ghi nợ. Số dư sau bill: <strong style="color:#dc2626">${formatMoney(afterBal)} (Nợ ${formatMoney(debt)})</strong>
+              </div>
+              <button class="btn btn-xs btn-success" type="button" style="padding:3px 8px;font-size:11px" onclick="App.depositMemberModal('${member.id}')">
+                ${ic('plus-circle', 12)} Nộp tiền cho ${member.name}
+              </button>
             </div>`;
           lucide.createIcons({ nodes: [noticeEl] });
         }
-        confirmBtns.forEach(btn => btn.disabled = true);
       }
     } else {
       if (noticeEl) noticeEl.innerHTML = '';
-      confirmBtns.forEach(btn => btn.disabled = false);
     }
   },
 
@@ -2010,7 +2123,7 @@ const App = {
   renderMembersPage() {
     this.updateNavBadges();
     const members = Store.getMembers();
-    const grid    = document.getElementById('members-grid');
+    const grid = document.getElementById('members-grid');
     const counter = document.getElementById('members-count');
     if (!grid) return;
 
@@ -2034,18 +2147,18 @@ const App = {
   },
 
   _memberCardHTML(member) {
-    const rank     = this._memberRank(member.points);
+    const rank = this._memberRank(member.points);
     const initials = (member.name || '?').split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
     const lastVisit = member.lastVisit ? formatDateShort(member.lastVisit) : '—';
 
     // Next rank progress (read from Store so it reflects admin-set thresholds)
-    const allRanks    = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
-    const nextRank    = allRanks.find(r => r.minPoints > member.points) || null;
+    const allRanks = Store.getRankSettings().slice().sort((a, b) => a.minPoints - b.minPoints);
+    const nextRank = allRanks.find(r => r.minPoints > member.points) || null;
     const topDiscount = allRanks[allRanks.length - 1]?.discount ?? 0;
     const nextRankInfo = nextRank ? {
       labelHtml: `${ic(nextRank.icon, 12)} ${nextRank.label}`,
       need: nextRank.minPoints,
-      pct:  Math.min(100, Math.round((member.points / nextRank.minPoints) * 100)),
+      pct: Math.min(100, Math.round((member.points / nextRank.minPoints) * 100)),
     } : null;
 
     return `
@@ -2057,20 +2170,20 @@ const App = {
           </div>
           <div class="member-info">
             <div class="member-name">${member.name}</div>
-            <div class="member-phone">${ic('phone',13)} ${member.phone || 'Chưa có SĐT'}</div>
+            <div class="member-phone">${ic('phone', 13)} ${member.phone || 'Chưa có SĐT'}</div>
             <div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="display:inline-flex;align-items:center;gap:4px;background:${(member.balance || 0) > 0 ? '#ecfdf5' : '#f3f4f6'};color:${(member.balance || 0) > 0 ? '#047857' : '#6b7280'};border:1px solid ${(member.balance || 0) > 0 ? '#a7f3d0' : '#e5e7eb'};font-weight:700;padding:2px 8px;border-radius:12px;font-size:12px">
-                ${ic('credit-card', 12)} ${formatMoney(member.balance || 0)}
+              <span style="display:inline-flex;align-items:center;gap:4px;background:${(member.balance || 0) < 0 ? '#fef2f2' : ((member.balance || 0) > 0 ? '#ecfdf5' : '#f3f4f6')};color:${(member.balance || 0) < 0 ? '#dc2626' : ((member.balance || 0) > 0 ? '#047857' : '#6b7280')};border:1px solid ${(member.balance || 0) < 0 ? '#fecaca' : ((member.balance || 0) > 0 ? '#a7f3d0' : '#e5e7eb')};font-weight:700;padding:2px 8px;border-radius:12px;font-size:12px">
+                ${ic('credit-card', 12)} ${(member.balance || 0) < 0 ? `Nợ ${formatMoney(member.balance)}` : formatMoney(member.balance || 0)}
               </span>
               <button class="btn btn-success btn-sm" style="padding:2px 8px;font-size:11px;border-radius:8px" onclick="App.depositMemberModal('${member.id}')" title="Nộp tiền vào tài khoản">
                 ${ic('plus-circle', 12)} Nộp tiền
               </button>
             </div>
-            ${member.note ? `<div class="member-note" style="margin-top:4px">${ic('message-circle',12)} ${member.note}</div>` : ''}
+            ${member.note ? `<div class="member-note" style="margin-top:4px">${ic('message-circle', 12)} ${member.note}</div>` : ''}
           </div>
           <div class="member-card-actions">
-            <button class="btn btn-ghost btn-icon btn-sm" onclick="App.editMemberModal('${member.id}')" title="Chỉnh sửa">${ic('pencil',14)}</button>
-            <button class="btn btn-danger btn-icon btn-sm" onclick="App.deleteMember('${member.id}')" title="Xóa">${ic('trash-2',14)}</button>
+            <button class="btn btn-ghost btn-icon btn-sm" onclick="App.editMemberModal('${member.id}')" title="Chỉnh sửa">${ic('pencil', 14)}</button>
+            <button class="btn btn-danger btn-icon btn-sm" onclick="App.deleteMember('${member.id}')" title="Xóa">${ic('trash-2', 14)}</button>
           </div>
         </div>
 
@@ -2105,12 +2218,12 @@ const App = {
         </div>` : `
         <div class="member-progress-wrap">
           <div class="member-progress-label" style="justify-content:center;color:#06b6d4;font-weight:700">
-            ${ic('star',13)} Hạng cao nhất — Ưu đãi ${topDiscount}%!
+            ${ic('star', 13)} Hạng cao nhất — Ưu đãi ${topDiscount}%!
           </div>
         </div>`}
         ${rank.discount > 0 ? `
         <div class="member-discount-tag" style="background:${rank.bg};border-color:${rank.border};color:${rank.color}">
-          ${ic('tag',13)} Được giảm ${rank.discount}% khi thanh toán
+          ${ic('tag', 13)} Được giảm ${rank.discount}% khi thanh toán
         </div>` : ''}
       </div>`;
   },
@@ -2133,8 +2246,8 @@ const App = {
             <div style="font-size:12px;color:var(--text-secondary)">${m.phone || 'Chưa có SĐT'}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:11px;color:var(--text-muted)">Số dư hiện tại</div>
-            <div style="font-weight:800;font-size:16px;color:#10b981">${formatMoney(m.balance || 0)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${(m.balance || 0) < 0 ? 'Đang ghi nợ' : 'Số dư hiện tại'}</div>
+            <div style="font-weight:800;font-size:16px;color:${(m.balance || 0) < 0 ? '#dc2626' : '#10b981'}">${formatMoney(m.balance || 0)}</div>
           </div>
         </div>
 
@@ -2153,6 +2266,11 @@ const App = {
         <div class="form-group">
           <label class="form-label" style="font-weight:600">Số tiền nộp (VNĐ) <span style="color:var(--danger)">*</span></label>
           <input type="number" id="dep-amount" class="form-control" placeholder="Ví dụ: 100000" value="100000" min="10000" step="10000" oninput="App._calcDepositSummary('${id}')">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600">Khuyến mãi riêng (%)</label>
+          <input type="number" id="dep-bonus-pct" class="form-control" placeholder="Mặc định: ${bonusPct}%" min="0" max="100" step="1" oninput="App._calcDepositSummary('${id}')">
+          <div class="form-hint">Để trống để dùng mức mặc định ${bonusPct}% trong Cài đặt; nhập tỷ lệ riêng để áp dụng cho lần nộp này.</div>
         </div>
 
         <div id="dep-summary-box" style="background:#f0fdf4;border:1px dashed #86efac;border-radius:12px;padding:14px;margin-bottom:18px">
@@ -2183,8 +2301,12 @@ const App = {
     if (!member || !box) return;
 
     const amountInput = document.getElementById('dep-amount');
+    const bonusInput = document.getElementById('dep-bonus-pct');
     const amount = Number(amountInput?.value) || 0;
-    const bonusPct = Store.getDepositBonusPct();
+    const customBonus = bonusInput?.value;
+    const bonusPct = customBonus === undefined || customBonus === ''
+      ? Store.getDepositBonusPct()
+      : Math.max(0, Math.min(100, Math.round(Number(customBonus) || 0)));
     const bonusAmount = Math.round(amount * bonusPct / 100);
     const credit = amount + bonusAmount;
     const newBalance = (member.balance || 0) + credit;
@@ -2218,7 +2340,9 @@ const App = {
       return;
     }
     try {
-      const res = Store.depositMemberBalance(id, amount);
+      const bonusInput = document.getElementById('dep-bonus-pct');
+      const customBonus = bonusInput?.value === '' ? null : bonusInput?.value;
+      const res = Store.depositMemberBalance(id, amount, customBonus);
       Modal.close();
       Toast.show(`Đã nộp ${formatMoney(amount)} → +${formatMoney(res.record.credit)} vào tài khoản ${res.member.name}!`, 'success');
       this.renderMembersPage();
@@ -2256,9 +2380,9 @@ const App = {
   },
 
   _saveNewMember() {
-    const name  = document.getElementById('mem-name')?.value.trim();
+    const name = document.getElementById('mem-name')?.value.trim();
     const phone = document.getElementById('mem-phone')?.value.trim();
-    const note  = document.getElementById('mem-note')?.value.trim();
+    const note = document.getElementById('mem-note')?.value.trim();
     if (!name) { Toast.show('Vui lòng nhập tên thành viên!', 'error'); return; }
     Store.addMember({ name, phone, note });
     Modal.close();
@@ -2283,10 +2407,10 @@ const App = {
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
 
-        <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+        <div style="background:${(m.balance || 0) < 0 ? '#fef2f2' : '#ecfdf5'};border:1px solid ${(m.balance || 0) < 0 ? '#fecaca' : '#a7f3d0'};border-radius:10px;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div style="font-size:12px;color:#047857;font-weight:600">Số dư tài khoản</div>
-            <div style="font-weight:800;font-size:18px;color:#047857">${formatMoney(m.balance || 0)}</div>
+            <div style="font-size:12px;color:${(m.balance || 0) < 0 ? '#dc2626' : '#047857'};font-weight:600">${(m.balance || 0) < 0 ? 'Đang ghi nợ' : 'Số dư tài khoản'}</div>
+            <div style="font-weight:800;font-size:18px;color:${(m.balance || 0) < 0 ? '#dc2626' : '#047857'}">${formatMoney(m.balance || 0)}</div>
           </div>
           <button class="btn btn-success btn-sm" type="button" onclick="App.depositMemberModal('${m.id}')">
             ${ic('plus-circle', 14)} Nộp tiền ngay
@@ -2347,9 +2471,9 @@ const App = {
   },
 
   _saveEditMember(id) {
-    const name   = document.getElementById('em-name')?.value.trim();
-    const phone  = document.getElementById('em-phone')?.value.trim();
-    const note   = document.getElementById('em-note')?.value.trim();
+    const name = document.getElementById('em-name')?.value.trim();
+    const phone = document.getElementById('em-phone')?.value.trim();
+    const note = document.getElementById('em-note')?.value.trim();
     const points = parseInt(document.getElementById('em-points')?.value) || 0;
     if (!name) { Toast.show('Vui lòng nhập tên thành viên!', 'error'); return; }
     Store.updateMember(id, { name, phone, note, points });
@@ -2389,18 +2513,18 @@ const App = {
   },
 
   searchMembers(query) {
-    const q       = query.toLowerCase().trim();
+    const q = query.toLowerCase().trim();
     const members = Store.getMembers();
-    const grid    = document.getElementById('members-grid');
+    const grid = document.getElementById('members-grid');
     if (!grid) return;
     const filtered = q
       ? members.filter(m =>
-          m.name.toLowerCase().includes(q) ||
-          (m.phone || '').includes(q)
-        )
+        m.name.toLowerCase().includes(q) ||
+        (m.phone || '').includes(q)
+      )
       : members;
     if (filtered.length === 0) {
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:40px 0">${ic('search',36)}<p style="margin-top:10px">Không tìm thấy thành viên nào</p></div>`;
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:40px 0">${ic('search', 36)}<p style="margin-top:10px">Không tìm thấy thành viên nào</p></div>`;
     } else {
       grid.innerHTML = filtered.map(m => this._memberCardHTML(m)).join('');
     }
@@ -2411,12 +2535,12 @@ const App = {
 
   renderSettings() {
     const cfg = Store.getSettings();
-    const s   = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-    s('s-name',          cfg.shopName);
-    s('s-address',       cfg.shopAddress);
-    s('s-phone',         cfg.shopPhone);
-    s('s-price',         cfg.defaultPricePerHour);
-    s('s-footer',        cfg.footerNote);
+    const s = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    s('s-name', cfg.shopName);
+    s('s-address', cfg.shopAddress);
+    s('s-phone', cfg.shopPhone);
+    s('s-price', cfg.defaultPricePerHour);
+    s('s-footer', cfg.footerNote);
     s('s-deposit-bonus', Store.getDepositBonusPct());
     this._renderRankSettings();
   },
@@ -2435,13 +2559,13 @@ const App = {
           </span>
           <span class="rank-setting-label" style="color:${pal.color}">${rank.label}</span>
           <div class="rank-setting-field" style="flex:1">
-            <label>${ic('star',11)} Từ điểm</label>
+            <label>${ic('star', 11)} Từ điểm</label>
             <input type="number" class="form-control" id="rs-min-${rank.id}"
               value="${rank.minPoints}" min="0" step="1"
               ${idx === 0 ? 'readonly title="Hạng cơ sở luôn bắt đầu từ 0"' : ''}>
           </div>
           <div class="rank-setting-field">
-            <label>${ic('tag',11)} Giảm %</label>
+            <label>${ic('tag', 11)} Giảm %</label>
             <input type="number" class="form-control" id="rs-disc-${rank.id}"
               value="${rank.discount}" min="0" max="100" step="1">
           </div>
@@ -2456,12 +2580,12 @@ const App = {
     const updated = ranks.map((rank, idx) => ({
       ...rank,
       minPoints: idx === 0 ? 0 : (parseInt(document.getElementById(`rs-min-${rank.id}`)?.value) || rank.minPoints),
-      discount:  parseInt(document.getElementById(`rs-disc-${rank.id}`)?.value) ?? rank.discount,
+      discount: parseInt(document.getElementById(`rs-disc-${rank.id}`)?.value) ?? rank.discount,
     }));
     // Validate: each rank's minPoints must be strictly greater than the previous
     for (let i = 1; i < updated.length; i++) {
       if (updated[i].minPoints <= updated[i - 1].minPoints) {
-        Toast.show(`Ngưỡng điểm hạng "${updated[i].label}" phải lớn hơn hạng "${updated[i-1].label}"!`, 'error');
+        Toast.show(`Ngưỡng điểm hạng "${updated[i].label}" phải lớn hơn hạng "${updated[i - 1].label}"!`, 'error');
         return;
       }
     }
@@ -2477,11 +2601,11 @@ const App = {
       Store.setDepositBonusPct(bonusVal);
     }
     Store.setSettings({
-      shopName:            document.getElementById('s-name').value.trim(),
-      shopAddress:         document.getElementById('s-address').value.trim(),
-      shopPhone:           document.getElementById('s-phone').value.trim(),
+      shopName: document.getElementById('s-name').value.trim(),
+      shopAddress: document.getElementById('s-address').value.trim(),
+      shopPhone: document.getElementById('s-phone').value.trim(),
       defaultPricePerHour: parseInt(document.getElementById('s-price').value) || 50000,
-      footerNote:          document.getElementById('s-footer').value.trim(),
+      footerNote: document.getElementById('s-footer').value.trim(),
     });
     Toast.show('Đã lưu cài đặt!', 'success');
   },
@@ -2490,7 +2614,7 @@ const App = {
     Modal.show(`
       <div class="modal">
         <div class="modal-header">
-          <div class="modal-title">${ic('lock',20)} Đổi mật khẩu</div>
+          <div class="modal-title">${ic('lock', 20)} Đổi mật khẩu</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
         <div class="form-group">
@@ -2515,13 +2639,13 @@ const App = {
   },
 
   _doChangePassword() {
-    const old     = document.getElementById('pw-old').value;
-    const nw      = document.getElementById('pw-new').value;
+    const old = document.getElementById('pw-old').value;
+    const nw = document.getElementById('pw-new').value;
     const confirm = document.getElementById('pw-confirm').value;
-    const stored  = localStorage.getItem('thiencafe_password') || '1234';
-    if (old !== stored)   { Toast.show('Mật khẩu hiện tại sai!', 'error');         return; }
-    if (nw.length < 4)    { Toast.show('Mật khẩu mới quá ngắn (≥4 ký tự)!', 'error'); return; }
-    if (nw !== confirm)   { Toast.show('Mật khẩu xác nhận không khớp!', 'error');  return; }
+    const stored = localStorage.getItem('thiencafe_password') || '1234';
+    if (old !== stored) { Toast.show('Mật khẩu hiện tại sai!', 'error'); return; }
+    if (nw.length < 4) { Toast.show('Mật khẩu mới quá ngắn (≥4 ký tự)!', 'error'); return; }
+    if (nw !== confirm) { Toast.show('Mật khẩu xác nhận không khớp!', 'error'); return; }
     localStorage.setItem('thiencafe_password', nw);
     Modal.close();
     Toast.show('Đã đổi mật khẩu thành công!', 'success');
@@ -2531,11 +2655,11 @@ const App = {
     Modal.show(`
       <div class="modal">
         <div class="modal-header">
-          <div class="modal-title" style="color:var(--danger)">${ic('alert-triangle',20)} Xóa toàn bộ dữ liệu</div>
+          <div class="modal-title" style="color:var(--danger)">${ic('alert-triangle', 20)} Xóa toàn bộ dữ liệu</div>
           <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
         </div>
         <div style="background:var(--danger-bg);border:1px solid var(--danger);border-radius:10px;padding:14px;margin-bottom:20px;color:var(--danger);font-size:13px;font-weight:700">
-          ${ic('alert-triangle',16)} Cảnh báo: Toàn bộ lịch sử hóa đơn, doanh thu và cài đặt sẽ bị xóa. Không thể hoàn tác!
+          ${ic('alert-triangle', 16)} Cảnh báo: Toàn bộ lịch sử hóa đơn, doanh thu và cài đặt sẽ bị xóa. Không thể hoàn tác!
         </div>
         <div class="form-group">
           <label class="form-label">Nhập <strong>XOA LICH SU</strong> để xác nhận</label>
@@ -2567,7 +2691,7 @@ function logout() {
   Modal.show(`
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">${ic('log-out',20)} Đăng xuất</div>
+        <div class="modal-title">${ic('log-out', 20)} Đăng xuất</div>
         <button class="modal-close" onclick="Modal.close()">${ic('x')}</button>
       </div>
       <p style="color:var(--text-secondary);margin-bottom:24px">Bạn có chắc muốn đăng xuất?</p>
